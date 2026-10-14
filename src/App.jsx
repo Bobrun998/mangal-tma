@@ -50,7 +50,7 @@ const AnimatedPanda = () => {
     );
 };
 
-// Функция надежного определения реального пользователя из Telegram
+// Извлечение реального Telegram-пользователя
 function getRealTelegramUser() {
     const tg = window.Telegram?.WebApp;
     if (tg?.initDataUnsafe?.user?.id) {
@@ -61,7 +61,6 @@ function getRealTelegramUser() {
         };
     }
 
-    // Попытка распарсить строку initData из URL
     try {
         const urlParams = new URLSearchParams(window.location.hash.substring(1));
         const initDataRaw = urlParams.get('tgWebAppData');
@@ -81,7 +80,6 @@ function getRealTelegramUser() {
         console.error(e);
     }
 
-    // Если запуск идет вне Telegram — генерируем и запоминаем уникальный ID для каждого устройства
     let localId = localStorage.getItem('mangal_device_id');
     if (!localId) {
         localId = 'guest_' + Math.floor(100000 + Math.random() * 900000);
@@ -300,15 +298,6 @@ export default function App() {
         }
     };
 
-    // Переключатель тестового аккаунта для проверки со смартфона или ПК
-    const switchTestAccount = () => {
-        const inputId = prompt('Для теста введите Telegram ID (Влада: 848502221, Никита: 5676195545, Дастан: 6804474400, Полина: 1787388463):');
-        if (inputId) {
-            localStorage.setItem('mangal_device_id', inputId.trim());
-            window.location.reload();
-        }
-    };
-
     // ==========================================
     // 1. ПУЛЬТ ПЕРСОНАЛА
     // ==========================================
@@ -322,12 +311,9 @@ export default function App() {
                         </h2>
                         <span style={{ fontSize: '11px', color: '#888' }}>Mangal Lounge Staff</span>
                     </div>
-                    <button 
-                        onClick={switchTestAccount}
-                        style={{ fontSize: '11px', background: '#2a2a35', color: '#bbb', padding: '6px 10px', borderRadius: '8px', border: '1px solid #444', cursor: 'pointer' }}
-                    >
-                        ID: {user?.id} 🔄
-                    </button>
+                    <span style={{ fontSize: '12px', background: '#2a2a35', padding: '6px 12px', borderRadius: '10px', border: '1px solid #444', color: '#bbb' }}>
+                        ID: {user?.id}
+                    </span>
                 </header>
 
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
@@ -657,10 +643,7 @@ export default function App() {
 
                     <p style={{ margin: 0, color: '#bbb', fontSize: '14px', marginBottom: '10px' }}>Статус: <b style={{color: '#ff9800'}}>{user?.level || 'Серебро'}</b></p>
                     <div style={{ fontSize: '12px', color: '#777', marginBottom: '15px' }}>
-                        Ваш ID: {user?.id}{' '}
-                        <button onClick={switchTestAccount} style={{ background: 'none', border: 'none', color: '#ff9800', cursor: 'pointer', textDecoration: 'underline' }}>
-                            [сменить для теста]
-                        </button>
+                        Ваш ID: {user?.id}
                     </div>
 
                     <h2 style={{ margin: '0 0 10px 0', fontSize: '32px', fontWeight: '800' }}>{user?.bonusBalance !== undefined ? user.bonusBalance.toLocaleString() : 300} ₫</h2>

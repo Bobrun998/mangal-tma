@@ -91,18 +91,33 @@ function getRealTelegramUser() {
     };
 }
 
+// Надежное извлечение реферальной метки со всех платформ
 function extractStartParam() {
     const tg = window.Telegram?.WebApp;
     if (tg?.initDataUnsafe?.start_param) {
         return tg.initDataUnsafe.start_param;
     }
+
+    // 1. Поиск в search параметрах URL
     const searchParams = new URLSearchParams(window.location.search);
     if (searchParams.get('tgWebAppStartParam')) return searchParams.get('tgWebAppStartParam');
     if (searchParams.get('startapp')) return searchParams.get('startapp');
     if (searchParams.get('start')) return searchParams.get('start');
 
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    // 2. Поиск в hash параметрах URL
+    const hashString = window.location.hash.substring(1);
+    const hashParams = new URLSearchParams(hashString);
     if (hashParams.get('tgWebAppStartParam')) return hashParams.get('tgWebAppStartParam');
+    if (hashParams.get('start_param')) return hashParams.get('start_param');
+
+    // 3. Поиск внутри tgWebAppData в hash
+    const rawData = hashParams.get('tgWebAppData');
+    if (rawData) {
+        const innerParams = new URLSearchParams(rawData);
+        if (innerParams.get('start_param')) return innerParams.get('start_param');
+        if (innerParams.get('startapp')) return innerParams.get('startapp');
+    }
+
     return '';
 }
 
@@ -136,7 +151,7 @@ export default function App() {
 
     const BACKEND_URL = 'https://mangal-tma.onrender.com';
 
-    const loadUserData = () => {
+    const syncUserData = () => {
         const tg = window.Telegram?.WebApp;
         const tgUser = getRealTelegramUser();
         const startParam = extractStartParam();
@@ -169,7 +184,7 @@ export default function App() {
             tg.ready();
             tg.expand();
         }
-        loadUserData();
+        syncUserData();
     }, []);
 
     const shareInviteLink = () => {
@@ -578,7 +593,7 @@ export default function App() {
 
             <header className="header">
                 <div className="avatar" onClick={() => {
-                    loadUserData();
+                    syncUserData(); // Запрос свежих данных и рефералов при каждом клике на профиль
                     setIsCabinetOpen(true);
                 }}>
                     {user?.photoUrl ? (
@@ -728,7 +743,7 @@ export default function App() {
 
                         {(!user?.referrals || user.referrals.length === 0) ? (
                             <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '12px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
-                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс!
+                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_5](start_span)[span_5](end_span)!
                             </div>
                         ) : (
                             <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -748,7 +763,7 @@ export default function App() {
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
                                             <div style={{ color: '#4caf50', fontWeight: 'bold', fontSize: '13px' }}>
-                                                +{friend.earnedFromUser.toLocaleString()} ₫
+                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_6](start_span)[span_6](end_span)
                                             </div>
                                             <div style={{ fontSize: '10px', color: '#777' }}>доход 5%</div>
                                         </div>

@@ -201,33 +201,27 @@ export default function App() {
         });
     };
 
-    // Надежный вызов сканера QR Telegram
     const handleScanQr = () => {
         const tg = window.Telegram?.WebApp;
 
         if (tg && typeof tg.showScanQrPopup === 'function') {
-            const onQrReceived = (data) => {
-                const text = typeof data === 'string' ? data : (data?.data || '');
-                if (text) {
-                    const clientId = text.replace('mangal_guest_', '').trim();
-                    fetchClientData(clientId);
-                    if (tg.closeScanQrPopup) tg.closeScanQrPopup();
-                    if (tg.offEvent) tg.offEvent('qrTextReceived', onQrReceived);
-                    return true;
-                }
-            };
-
-            if (tg.onEvent) tg.onEvent('qrTextReceived', onQrReceived);
-
             try {
-                tg.showScanQrPopup({ text: 'Наведите камеру на QR-код гостя' }, onQrReceived);
+                if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+                tg.showScanQrPopup({ text: 'Наведите камеру на QR-код гостя' }, (scannedText) => {
+                    if (scannedText) {
+                        const clientId = scannedText.replace('mangal_guest_', '').trim();
+                        fetchClientData(clientId);
+                        tg.closeScanQrPopup();
+                        return true;
+                    }
+                });
+                return;
             } catch (err) {
-                console.error('Ошибка вызова showScanQrPopup:', err);
-                promptManualId();
+                console.error('Ошибка вызова нативного сканера:', err);
             }
-        } else {
-            promptManualId();
         }
+
+        promptManualId();
     };
 
     const promptManualId = () => {
@@ -561,7 +555,7 @@ export default function App() {
                             />
                             <button 
                                 onClick={handleSaveProduct}
-                                style={{ width: '100%', padding: '14px', background: '#4caf50', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 'bold', fontSize: '16px' }}
+                                style={{ width: '100%', padding: '14px', background: '#4caf50', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}
                             >
                                 Сохранить
                             </button>
@@ -736,7 +730,7 @@ export default function App() {
 
                         {(!user?.referrals || user.referrals.length === 0) ? (
                             <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '12px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
-                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_1](start_span)[span_1](end_span)!
+                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_6](start_span)[span_6](end_span)!
                             </div>
                         ) : (
                             <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -756,7 +750,7 @@ export default function App() {
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
                                             <div style={{ color: '#4caf50', fontWeight: 'bold', fontSize: '13px' }}>
-                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_2](start_span)[span_2](end_span)
+                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_7](start_span)[span_7](end_span)
                                             </div>
                                             <div style={{ fontSize: '10px', color: '#777' }}>доход 5%</div>
                                         </div>

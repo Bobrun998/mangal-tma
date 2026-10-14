@@ -11,7 +11,6 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'database.json');
 
-// Белый список сотрудников команды Mangal Lounge
 const STAFF_MEMBERS = {
     '848502221': { name: 'Влада', role: 'waiter', title: 'Официант' },
     '5676195545': { name: 'Никита', role: 'hookah', title: 'Кальянный мастер' },
@@ -49,7 +48,7 @@ function saveDB() {
     }
 }
 
-// 1. Авторизация, загрузка профиля и привязка реферала
+// 1. Инициализация и привязка реферала
 app.post('/api/init-user', (req, res) => {
     let { userId, firstName, photoUrl, startParam } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId обязателен' });
@@ -57,45 +56,59 @@ app.post('/api/init-user', (req, res) => {
     const strId = String(userId).trim();
     const staffInfo = STAFF_MEMBERS[strId] || null;
 
+    let referrerId = null;
+    if (startParam) {
+        referrerId = String(startParam).replace('ref_', '').trim();
+        if (referrerId === strId) referrerId = null;
+    }
+
     if (!db.users[strId]) {
-        let referrerId = null;
-        let bonusBalance = 300;
-
-        if (startParam) {
-            referrerId = String(startParam).replace('ref_', '').trim();
-            if (referrerId === strId) {
-                referrerId = null;
-            } else if (db.users[referrerId]) {
-                db.users[referrerId].bonusBalance = (db.users[referrerId].bonusBalance || 0) + 100;
-                db.users[referrerId].referrals = db.users[referrerId].referrals || [];
-                
-                const alreadyAdded = db.users[referrerId].referrals.some(r => String(r.userId) === strId);
-                if (!alreadyAdded) {
-                    db.users[referrerId].referrals.push({
-                        userId: strId,
-                        name: firstName || 'Гость',
-                        joinedAt: new Date().toLocaleDateString('ru-RU'),
-                        earnedFromUser: 0
-                    });
-                }
-            }
-        }
-
         db.users[strId] = {
             id: strId,
             firstName: firstName || (staffInfo ? staffInfo.name : 'Гость'),
             photoUrl: photoUrl || '',
             referredBy: referrerId,
-            bonusBalance: bonusBalance,
+            bonusBalance: 300,
             level: 'Серебро',
             clientNotes: '',
             referrals: []
         };
+
+        if (referrerId && db.users[referrerId]) {
+            db.users[referrerId].bonusBalance = (db.users[referrerId].bonusBalance || 0) + 100;
+            db.users[referrerId].referrals = db.users[referrerId].referrals || [];
+            db.users[referrerId].referrals.push({
+                userId: strId,
+                name: firstName || 'Гость',
+                joinedAt: new Date().toLocaleDateString('ru-RU'),
+                earnedFromUser: 0
+            });
+        }
         saveDB();
     } else {
+        // Если пользователь уже был, но реферер не был указан ранее
+        if (referrerId && !db.users[strId].referredBy && db.users[referrerId]) {
+            db.users[strId].referredBy = referrerId;
+            db.users[referrerId].bonusBalance = (db.users[referrerId].bonusBalance || 0) + 100;
+            db.users[referrerId].referrals = db.users[referrerId].referrals || [];
+            const alreadyInList = db.users[referrerId].referrals.some(r => String(r.userId) === strId);
+            if (!alreadyInList) {
+                db.users[referrerId].referrals.push({
+                    userId: strId,
+                    name: db.users[strId].firstName || firstName || 'Гость',
+                    joinedAt: new Date().toLocaleDateString('ru-RU'),
+                    earnedFromUser: 0
+                });
+            }
+            saveDB();
+        }
+
         if (photoUrl && !db.users[strId].photoUrl) {
             db.users[strId].photoUrl = photoUrl;
             saveDB();
+        }
+        if (!db.users[strId].referrals) {
+            db.users[strId].referrals = [];
         }
     }
 
@@ -108,7 +121,6 @@ app.post('/api/init-user', (req, res) => {
     });
 });
 
-// 2. Смена имени гостя
 app.post('/api/user/update-name', (req, res) => {
     const { userId, newName } = req.body;
     const strId = String(userId).trim();
@@ -120,7 +132,6 @@ app.post('/api/user/update-name', (req, res) => {
     res.status(404).json({ error: 'Пользователь не найден' });
 });
 
-// 3. Инфо о клиенте
 app.get('/api/staff/client-info/:userId', (req, res) => {
     const strId = String(req.params.userId).trim();
     const client = db.users[strId] || {
@@ -133,7 +144,6 @@ app.get('/api/staff/client-info/:userId', (req, res) => {
     res.json(client);
 });
 
-// 4. Посадить гостя за стол + сохранить постоянные заметки
 app.post('/api/staff/open-table', (req, res) => {
     const { tableNum, userId, notes, staffName } = req.body;
     const strId = String(userId).trim();
@@ -157,7 +167,6 @@ app.post('/api/staff/open-table', (req, res) => {
     res.json({ success: true, activeTables: db.activeTables });
 });
 
-// 5. Обновление заметок гостя в карточке стола
 app.post('/api/staff/update-client-notes', (req, res) => {
     const { userId, notes, tableNum } = req.body;
     const strId = String(userId).trim();
@@ -171,7 +180,6 @@ app.post('/api/staff/update-client-notes', (req, res) => {
     res.json({ success: true, activeTables: db.activeTables });
 });
 
-// 6. Закрытие стола с кешбэком 3% клиенту и 5% рефереру
 app.post('/api/staff/close-table', (req, res) => {
     const { tableNum, orderTotal } = req.body;
     const table = db.activeTables[tableNum];
@@ -202,7 +210,6 @@ app.post('/api/staff/close-table', (req, res) => {
     res.json({ success: true, cashbackAwarded: cashback, activeTables: db.activeTables });
 });
 
-// 7. Каталог Mr. Po
 app.get('/api/products', (req, res) => res.json(db.products));
 
 app.post('/api/products/add', (req, res) => {

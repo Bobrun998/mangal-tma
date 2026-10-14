@@ -201,21 +201,38 @@ export default function App() {
         });
     };
 
-    // Нативный сканер Telegram без багов
+    // Надежный вызов сканера QR Telegram
     const handleScanQr = () => {
         const tg = window.Telegram?.WebApp;
 
         if (tg && typeof tg.showScanQrPopup === 'function') {
-            tg.showScanQrPopup({ text: 'Наведите камеру на QR-код гостя' }, (scannedText) => {
-                const clientId = scannedText.replace('mangal_guest_', '').trim();
-                fetchClientData(clientId);
-                tg.closeScanQrPopup();
-                return true;
-            });
+            const onQrReceived = (data) => {
+                const text = typeof data === 'string' ? data : (data?.data || '');
+                if (text) {
+                    const clientId = text.replace('mangal_guest_', '').trim();
+                    fetchClientData(clientId);
+                    if (tg.closeScanQrPopup) tg.closeScanQrPopup();
+                    if (tg.offEvent) tg.offEvent('qrTextReceived', onQrReceived);
+                    return true;
+                }
+            };
+
+            if (tg.onEvent) tg.onEvent('qrTextReceived', onQrReceived);
+
+            try {
+                tg.showScanQrPopup({ text: 'Наведите камеру на QR-код гостя' }, onQrReceived);
+            } catch (err) {
+                console.error('Ошибка вызова showScanQrPopup:', err);
+                promptManualId();
+            }
         } else {
-            const manualId = prompt('Введите ID гостя с его экрана (или под QR):');
-            if (manualId) fetchClientData(manualId.replace('mangal_guest_', '').trim());
+            promptManualId();
         }
+    };
+
+    const promptManualId = () => {
+        const manualId = prompt('Введите ID гостя с экрана:');
+        if (manualId) fetchClientData(manualId.replace('mangal_guest_', '').trim());
     };
 
     const fetchClientData = (clientId) => {
@@ -346,12 +363,12 @@ export default function App() {
                 <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <div>
                         <h2 style={{ margin: 0, color: 'var(--accent-amber)', fontSize: '20px' }}>
-                            {staffInfo?.name} ({staffInfo?.title})[span_2](start_span)[span_2](end_span)
+                            {staffInfo?.name} ({staffInfo?.title})
                         </h2>
-                        <span style={{ fontSize: '11px', color: '#888' }}>Mangal Lounge Staff[span_3](start_span)[span_3](end_span)</span>
+                        <span style={{ fontSize: '11px', color: '#888' }}>Mangal Lounge Staff</span>
                     </div>
                     <span style={{ fontSize: '12px', background: '#2a2a35', padding: '6px 12px', borderRadius: '10px', border: '1px solid #444', color: '#bbb' }}>
-                        ID: {user?.id}[span_4](start_span)[span_4](end_span)
+                        ID: {user?.id}
                     </span>
                 </header>
 
@@ -360,13 +377,13 @@ export default function App() {
                         onClick={() => setStaffTab('tables')}
                         style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: staffTab === 'tables' ? 'var(--accent-amber)' : '#2a2a35', color: '#fff', fontWeight: 'bold' }}
                     >
-                        🍽️ Столы ({Object.keys(activeTables).length})[span_5](start_span)[span_5](end_span)
+                        🍽️ Столы ({Object.keys(activeTables).length})
                     </button>
                     <button 
                         onClick={() => setStaffTab('products')}
                         style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: staffTab === 'products' ? '#e94560' : '#2a2a35', color: '#fff', fontWeight: 'bold' }}
                     >
-                        🥩 Продукция Mr. Po[span_6](start_span)[span_6](end_span)
+                        🥩 Продукция Mr. Po
                     </button>
                 </div>
 
@@ -376,14 +393,11 @@ export default function App() {
                             onClick={handleScanQr}
                             style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #ff9800, #d84315)', border: 'none', borderRadius: '16px', color: '#fff', fontSize: '18px', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginBottom: '14px', cursor: 'pointer', boxShadow: '0 4px 20px rgba(255,152,0,0.4)' }}
                         >
-                            📷 Сканировать QR гостя[span_7](start_span)[span_7](end_span)
+                            📷 Сканировать QR гостя
                         </button>
 
                         <button 
-                            onClick={() => {
-                                const manualId = prompt('Введите ID гостя с экрана:');
-                                if (manualId) fetchClientData(manualId.replace('mangal_guest_', '').trim());
-                            }}
+                            onClick={promptManualId}
                             style={{ width: '100%', padding: '10px', background: '#222', border: '1px dashed #555', borderRadius: '12px', color: '#aaa', fontSize: '13px', marginBottom: '20px', cursor: 'pointer' }}
                         >
                             ⌨️ Или введите ID гостя вручную
@@ -420,10 +434,10 @@ export default function App() {
                             </div>
                         )}
 
-                        <h3 style={{ fontSize: '16px', color: '#aaa', marginBottom: '12px' }}>Активные столы:[span_8](start_span)[span_8](end_span)</h3>
+                        <h3 style={{ fontSize: '16px', color: '#aaa', marginBottom: '12px' }}>Активные столы:</h3>
                         {Object.keys(activeTables).length === 0 ? (
                             <div style={{ padding: '30px', textAlign: 'center', background: '#181820', borderRadius: '16px', color: '#666', border: '1px dashed #333' }}>
-                                Нет открытых столов.[span_9](start_span)[span_9](end_span)
+                                Нет открытых столов.
                             </div>
                         ) : (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -722,7 +736,7 @@ export default function App() {
 
                         {(!user?.referrals || user.referrals.length === 0) ? (
                             <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '12px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
-                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_10](start_span)[span_10](end_span)!
+                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_1](start_span)[span_1](end_span)!
                             </div>
                         ) : (
                             <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -742,7 +756,7 @@ export default function App() {
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
                                             <div style={{ color: '#4caf50', fontWeight: 'bold', fontSize: '13px' }}>
-                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_11](start_span)[span_11](end_span)
+                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_2](start_span)[span_2](end_span)
                                             </div>
                                             <div style={{ fontSize: '10px', color: '#777' }}>доход 5%</div>
                                         </div>

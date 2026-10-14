@@ -11,6 +11,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'database.json');
 
+// Белый список сотрудников команды Mangal Lounge
 const STAFF_MEMBERS = {
     '848502221': { name: 'Влада', role: 'waiter', title: 'Официант' },
     '5676195545': { name: 'Никита', role: 'hookah', title: 'Кальянный мастер' },
@@ -48,7 +49,7 @@ function saveDB() {
     }
 }
 
-// 1. Авторизация и фиксация реферала
+// 1. Авторизация, загрузка профиля и привязка реферала
 app.post('/api/init-user', (req, res) => {
     let { userId, firstName, photoUrl, startParam } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId обязателен' });
@@ -62,7 +63,6 @@ app.post('/api/init-user', (req, res) => {
 
         if (startParam) {
             referrerId = String(startParam).replace('ref_', '').trim();
-            // Предотвращаем самоприглашение
             if (referrerId === strId) {
                 referrerId = null;
             } else if (db.users[referrerId]) {
@@ -108,6 +108,7 @@ app.post('/api/init-user', (req, res) => {
     });
 });
 
+// 2. Смена имени гостя
 app.post('/api/user/update-name', (req, res) => {
     const { userId, newName } = req.body;
     const strId = String(userId).trim();
@@ -119,6 +120,7 @@ app.post('/api/user/update-name', (req, res) => {
     res.status(404).json({ error: 'Пользователь не найден' });
 });
 
+// 3. Инфо о клиенте
 app.get('/api/staff/client-info/:userId', (req, res) => {
     const strId = String(req.params.userId).trim();
     const client = db.users[strId] || {
@@ -131,6 +133,7 @@ app.get('/api/staff/client-info/:userId', (req, res) => {
     res.json(client);
 });
 
+// 4. Посадить гостя за стол + сохранить постоянные заметки
 app.post('/api/staff/open-table', (req, res) => {
     const { tableNum, userId, notes, staffName } = req.body;
     const strId = String(userId).trim();
@@ -154,6 +157,7 @@ app.post('/api/staff/open-table', (req, res) => {
     res.json({ success: true, activeTables: db.activeTables });
 });
 
+// 5. Обновление заметок гостя в карточке стола
 app.post('/api/staff/update-client-notes', (req, res) => {
     const { userId, notes, tableNum } = req.body;
     const strId = String(userId).trim();
@@ -167,6 +171,7 @@ app.post('/api/staff/update-client-notes', (req, res) => {
     res.json({ success: true, activeTables: db.activeTables });
 });
 
+// 6. Закрытие стола с кешбэком 3% клиенту и 5% рефереру
 app.post('/api/staff/close-table', (req, res) => {
     const { tableNum, orderTotal } = req.body;
     const table = db.activeTables[tableNum];
@@ -175,13 +180,11 @@ app.post('/api/staff/close-table', (req, res) => {
     const client = db.users[table.userId];
     const amount = Number(orderTotal) || 0;
 
-    // Кешбэк гостю 3%
     const cashback = Math.round(amount * 0.03);
     if (client) {
         client.bonusBalance = (client.bonusBalance || 0) + cashback;
     }
 
-    // Реферальный бонус 5%
     if (client && client.referredBy && db.users[client.referredBy]) {
         const referrer = db.users[client.referredBy];
         const refBonus = Math.round(amount * 0.05);
@@ -199,6 +202,7 @@ app.post('/api/staff/close-table', (req, res) => {
     res.json({ success: true, cashbackAwarded: cashback, activeTables: db.activeTables });
 });
 
+// 7. Каталог Mr. Po
 app.get('/api/products', (req, res) => res.json(db.products));
 
 app.post('/api/products/add', (req, res) => {

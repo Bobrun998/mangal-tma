@@ -48,7 +48,7 @@ function saveDB() {
     }
 }
 
-// 1. Инициализация и привязка реферала
+// 1. Инициализация и автоматическая фиксация реферала
 app.post('/api/init-user', (req, res) => {
     let { userId, firstName, photoUrl, startParam } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId обязателен' });
@@ -59,58 +59,62 @@ app.post('/api/init-user', (req, res) => {
     let referrerId = null;
     if (startParam) {
         referrerId = String(startParam).replace('ref_', '').trim();
-        if (referrerId === strId) referrerId = null;
+        if (referrerId === strId) referrerId = null; // Защита от самоприглашения
     }
 
+    // Создаем пользователя, если его нет
     if (!db.users[strId]) {
         db.users[strId] = {
             id: strId,
             firstName: firstName || (staffInfo ? staffInfo.name : 'Гость'),
             photoUrl: photoUrl || '',
-            referredBy: referrerId,
+            referredBy: null,
             bonusBalance: 300,
             level: 'Серебро',
             clientNotes: '',
             referrals: []
         };
-
-        if (referrerId && db.users[referrerId]) {
-            db.users[referrerId].bonusBalance = (db.users[referrerId].bonusBalance || 0) + 100;
-            db.users[referrerId].referrals = db.users[referrerId].referrals || [];
-            db.users[referrerId].referrals.push({
-                userId: strId,
-                name: firstName || 'Гость',
-                joinedAt: new Date().toLocaleDateString('ru-RU'),
-                earnedFromUser: 0
-            });
-        }
-        saveDB();
     } else {
-        // Если пользователь уже был, но реферер не был указан ранее
-        if (referrerId && !db.users[strId].referredBy && db.users[referrerId]) {
-            db.users[strId].referredBy = referrerId;
-            db.users[referrerId].bonusBalance = (db.users[referrerId].bonusBalance || 0) + 100;
-            db.users[referrerId].referrals = db.users[referrerId].referrals || [];
-            const alreadyInList = db.users[referrerId].referrals.some(r => String(r.userId) === strId);
-            if (!alreadyInList) {
-                db.users[referrerId].referrals.push({
-                    userId: strId,
-                    name: db.users[strId].firstName || firstName || 'Гость',
-                    joinedAt: new Date().toLocaleDateString('ru-RU'),
-                    earnedFromUser: 0
-                });
-            }
-            saveDB();
-        }
-
         if (photoUrl && !db.users[strId].photoUrl) {
             db.users[strId].photoUrl = photoUrl;
-            saveDB();
         }
         if (!db.users[strId].referrals) {
             db.users[strId].referrals = [];
         }
     }
+
+    // Автоматическая привязка реферала (если еще не привязан)
+    if (referrerId && !db.users[strId].referredBy) {
+        // Создаем реферера в базе, если его запись еще не инициализирована
+        if (!db.users[referrerId]) {
+            db.users[referrerId] = {
+                id: referrerId,
+                firstName: 'Друг',
+                photoUrl: '',
+                referredBy: null,
+                bonusBalance: 300,
+                level: 'Серебро',
+                clientNotes: '',
+                referrals: []
+            };
+        }
+
+        db.users[strId].referredBy = referrerId;
+        db.users[referrerId].bonusBalance = (db.users[referrerId].bonusBalance || 0) + 100;
+        db.users[referrerId].referrals = db.users[referrerId].referrals || [];
+
+        const alreadyAdded = db.users[referrerId].referrals.some(r => String(r.userId) === strId);
+        if (!alreadyAdded) {
+            db.users[referrerId].referrals.push({
+                userId: strId,
+                name: firstName || db.users[strId].firstName || 'Гость',
+                joinedAt: new Date().toLocaleDateString('ru-RU'),
+                earnedFromUser: 0
+            });
+        }
+    }
+
+    saveDB();
 
     res.json({
         user: db.users[strId],
@@ -180,6 +184,7 @@ app.post('/api/staff/update-client-notes', (req, res) => {
     res.json({ success: true, activeTables: db.activeTables });
 });
 
+// Закрытие стола с расчетом кешбэка 3% гостю и 5% рефереру
 app.post('/api/staff/close-table', (req, res) => {
     const { tableNum, orderTotal } = req.body;
     const table = db.activeTables[tableNum];

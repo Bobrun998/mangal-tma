@@ -1,0 +1,21 @@
+{
+  "users": {
+    "581886957": {
+      "id": "581886957",
+      "firstName": "Master",
+      "photoUrl": "",
+      "referredBy": null,
+      "bonusBalance": 1250,
+      "level": "Серебро",
+      "clientNotes": "",
+      "referrals": []
+    }
+  },
+  "activeTables": {},
+  "products": [
+    { "id": 1, "name": "Люля-кебаб (баранина)", "category": "Полуфабрикаты", "stock": 8, "price": 150000 },
+    { "id": 2, "name": "Стейк Рибай Premium", "category": "Мясо", "stock": 3, "price": 450000 },
+    { "id": 3, "name": "Пельмени фирменные", "category": "Заморозка", "stock": 12, "price": 120000 },
+    { "id": 4, "name": "Чизкейк Нью-Йорк", "category": "Десерты", "stock": 5, "price": 85000 }
+  ]
+}

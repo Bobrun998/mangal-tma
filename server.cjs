@@ -11,7 +11,6 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'database.json');
 
-// Белый список сотрудников
 const STAFF_MEMBERS = {
     '848502221': { name: 'Влада', role: 'waiter', title: 'Официант' },
     '5676195545': { name: 'Никита', role: 'hookah', title: 'Кальянный мастер' },
@@ -19,7 +18,6 @@ const STAFF_MEMBERS = {
     '1787388463': { name: 'Полина', role: 'waiter', title: 'Официант' }
 };
 
-// Загрузка / сохранение базы на диск
 function loadDB() {
     try {
         if (fs.existsSync(DB_FILE)) {
@@ -50,9 +48,9 @@ function saveDB() {
     }
 }
 
-// 1. Авторизация и инициализация профиля
+// 1. Авторизация и фиксация реферала
 app.post('/api/init-user', (req, res) => {
-    const { userId, firstName, photoUrl, startParam } = req.body;
+    let { userId, firstName, photoUrl, startParam } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId обязателен' });
 
     const strId = String(userId).trim();
@@ -62,17 +60,24 @@ app.post('/api/init-user', (req, res) => {
         let referrerId = null;
         let bonusBalance = 300;
 
-        if (startParam && startParam.startsWith('ref_')) {
-            referrerId = startParam.replace('ref_', '').trim();
-            if (db.users[referrerId] && referrerId !== strId) {
+        if (startParam) {
+            referrerId = String(startParam).replace('ref_', '').trim();
+            // Предотвращаем самоприглашение
+            if (referrerId === strId) {
+                referrerId = null;
+            } else if (db.users[referrerId]) {
                 db.users[referrerId].bonusBalance = (db.users[referrerId].bonusBalance || 0) + 100;
                 db.users[referrerId].referrals = db.users[referrerId].referrals || [];
-                db.users[referrerId].referrals.push({
-                    userId: strId,
-                    name: firstName || 'Гость',
-                    joinedAt: new Date().toLocaleDateString('ru-RU'),
-                    earnedFromUser: 0
-                });
+                
+                const alreadyAdded = db.users[referrerId].referrals.some(r => String(r.userId) === strId);
+                if (!alreadyAdded) {
+                    db.users[referrerId].referrals.push({
+                        userId: strId,
+                        name: firstName || 'Гость',
+                        joinedAt: new Date().toLocaleDateString('ru-RU'),
+                        earnedFromUser: 0
+                    });
+                }
             }
         }
 
@@ -83,6 +88,7 @@ app.post('/api/init-user', (req, res) => {
             referredBy: referrerId,
             bonusBalance: bonusBalance,
             level: 'Серебро',
+            clientNotes: '',
             referrals: []
         };
         saveDB();
@@ -102,7 +108,6 @@ app.post('/api/init-user', (req, res) => {
     });
 });
 
-// 2. Смена имени конкретного пользователя
 app.post('/api/user/update-name', (req, res) => {
     const { userId, newName } = req.body;
     const strId = String(userId).trim();
@@ -114,7 +119,6 @@ app.post('/api/user/update-name', (req, res) => {
     res.status(404).json({ error: 'Пользователь не найден' });
 });
 
-// 3. Инфо о клиенте по сканированному QR
 app.get('/api/staff/client-info/:userId', (req, res) => {
     const strId = String(req.params.userId).trim();
     const client = db.users[strId] || {
@@ -122,15 +126,19 @@ app.get('/api/staff/client-info/:userId', (req, res) => {
         firstName: 'Новый гость',
         bonusBalance: 300,
         level: 'Серебро',
-        notes: ''
+        clientNotes: ''
     };
     res.json(client);
 });
 
-// 4. Открытие стола
 app.post('/api/staff/open-table', (req, res) => {
     const { tableNum, userId, notes, staffName } = req.body;
     const strId = String(userId).trim();
+    
+    if (db.users[strId]) {
+        db.users[strId].clientNotes = notes || '';
+    }
+
     const client = db.users[strId] || { firstName: 'Гость', level: 'Серебро' };
     
     db.activeTables[tableNum] = {
@@ -146,7 +154,19 @@ app.post('/api/staff/open-table', (req, res) => {
     res.json({ success: true, activeTables: db.activeTables });
 });
 
-// 5. Закрытие стола с расчетом кешбэка
+app.post('/api/staff/update-client-notes', (req, res) => {
+    const { userId, notes, tableNum } = req.body;
+    const strId = String(userId).trim();
+    if (db.users[strId]) {
+        db.users[strId].clientNotes = notes;
+    }
+    if (tableNum && db.activeTables[tableNum]) {
+        db.activeTables[tableNum].notes = notes;
+    }
+    saveDB();
+    res.json({ success: true, activeTables: db.activeTables });
+});
+
 app.post('/api/staff/close-table', (req, res) => {
     const { tableNum, orderTotal } = req.body;
     const table = db.activeTables[tableNum];
@@ -155,11 +175,13 @@ app.post('/api/staff/close-table', (req, res) => {
     const client = db.users[table.userId];
     const amount = Number(orderTotal) || 0;
 
-    const cashback = Math.round(amount * 0.10);
+    // Кешбэк гостю 3%
+    const cashback = Math.round(amount * 0.03);
     if (client) {
         client.bonusBalance = (client.bonusBalance || 0) + cashback;
     }
 
+    // Реферальный бонус 5%
     if (client && client.referredBy && db.users[client.referredBy]) {
         const referrer = db.users[client.referredBy];
         const refBonus = Math.round(amount * 0.05);
@@ -177,7 +199,6 @@ app.post('/api/staff/close-table', (req, res) => {
     res.json({ success: true, cashbackAwarded: cashback, activeTables: db.activeTables });
 });
 
-// 6. Товары Mr. Po
 app.get('/api/products', (req, res) => res.json(db.products));
 
 app.post('/api/products/add', (req, res) => {
@@ -218,4 +239,4 @@ app.post('/api/products/delete', (req, res) => {
     res.json({ success: true, products: db.products });
 });
 
-app.listen(PORT, () => console.log(`Сервер запущен на порту ${PORT}`));
+app.listen(PORT, () => console.log(`Mangal Backend активен на порту ${PORT}`));

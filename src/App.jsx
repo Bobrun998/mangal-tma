@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './index.css';
 
 const EliteProgressBar = ({ progress }) => {
@@ -50,7 +50,6 @@ const AnimatedPanda = () => {
     );
 };
 
-// Извлечение реального Telegram-пользователя
 function getRealTelegramUser() {
     const tg = window.Telegram?.WebApp;
     if (tg?.initDataUnsafe?.user?.id) {
@@ -92,6 +91,25 @@ function getRealTelegramUser() {
     };
 }
 
+function extractStartParam() {
+    const tg = window.Telegram?.WebApp;
+    if (tg?.initDataUnsafe?.start_param) {
+        return tg.initDataUnsafe.start_param;
+    }
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('tgWebAppStartParam')) {
+        return searchParams.get('tgWebAppStartParam');
+    }
+    if (searchParams.get('startapp')) {
+        return searchParams.get('startapp');
+    }
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    if (hashParams.get('tgWebAppStartParam')) {
+        return hashParams.get('tgWebAppStartParam');
+    }
+    return '';
+}
+
 export default function App() {
     const [brand, setBrand] = useState('Mangal'); 
     const [isCabinetOpen, setIsCabinetOpen] = useState(false);
@@ -114,6 +132,9 @@ export default function App() {
     const [notesInput, setNotesInput] = useState('');
     const [orderSumInput, setOrderSumInput] = useState('');
 
+    const [isWebcamScanning, setIsWebcamScanning] = useState(false);
+    const html5QrCodeRef = useRef(null);
+
     const [editingProduct, setEditingProduct] = useState(null);
     const [prodName, setProdName] = useState('');
     const [prodCategory, setProdCategory] = useState('Мясо');
@@ -130,7 +151,7 @@ export default function App() {
         }
 
         const tgUser = getRealTelegramUser();
-        const startParam = tg?.initDataUnsafe?.start_param || '';
+        const startParam = extractStartParam();
 
         fetch(`${BACKEND_URL}/api/init-user`, {
             method: 'POST',
@@ -154,9 +175,12 @@ export default function App() {
         .catch(err => console.log('Ошибка связи с сервером:', err));
     }, []);
 
+    // Реферальная ссылка, совместимая со всеми клиентами Telegram
     const shareInviteLink = () => {
-        const inviteLink = `https://t.me/mangal_lounge_bot?startapp=ref_${user?.id || ''}`;
-        const messageText = "Держи 300 бонусов в Mangal Lounge! Открывай меню и пробуй сочные стейки:";
+        const userId = user?.id || '123456';
+        // Канонический формат Mini App ссылки
+        const inviteLink = `https://t.me/mangal_lounge_bot/app?startapp=ref_${userId}`;
+        const messageText = "Держи 300 бонусов в Mangal Lounge! Открывай меню и пробуй сочные блюда:";
         const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(messageText)}`;
         
         if (window.Telegram?.WebApp?.openTelegramLink) {
@@ -184,16 +208,54 @@ export default function App() {
 
     const handleScanQr = () => {
         const tg = window.Telegram?.WebApp;
-        if (tg?.showScanQrPopup) {
-            tg.showScanQrPopup({ text: 'Наведите камеру на QR-код гостя' }, (scannedText) => {
-                const clientId = scannedText.replace('mangal_guest_', '').trim();
-                fetchClientData(clientId);
-                tg.closeScanQrPopup();
-                return true;
-            });
+        if (tg?.showScanQrPopup && tg.isVersionAtLeast && tg.isVersionAtLeast('6.4')) {
+            try {
+                tg.showScanQrPopup({ text: 'Наведите камеру на QR-код гостя' }, (scannedText) => {
+                    const clientId = scannedText.replace('mangal_guest_', '').trim();
+                    fetchClientData(clientId);
+                    tg.closeScanQrPopup();
+                    return true;
+                });
+                return;
+            } catch (e) {
+                console.log(e);
+            }
+        }
+
+        setIsWebcamScanning(true);
+        setTimeout(() => {
+            if (window.Html5Qrcode) {
+                const scanner = new window.Html5Qrcode("reader");
+                html5QrCodeRef.current = scanner;
+                scanner.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: { width: 220, height: 220 } },
+                    (decodedText) => {
+                        const clientId = decodedText.replace('mangal_guest_', '').trim();
+                        fetchClientData(clientId);
+                        stopWebcamScanner();
+                    },
+                    () => {}
+                ).catch(() => {
+                    stopWebcamScanner();
+                    const testId = prompt('Камера недоступна. Введите ID гостя вручную:');
+                    if (testId) fetchClientData(testId.replace('mangal_guest_', '').trim());
+                });
+            } else {
+                const testId = prompt('Введите ID гостя:');
+                if (testId) fetchClientData(testId.replace('mangal_guest_', '').trim());
+            }
+        }, 150);
+    };
+
+    const stopWebcamScanner = () => {
+        if (html5QrCodeRef.current) {
+            html5QrCodeRef.current.stop().then(() => {
+                html5QrCodeRef.current.clear();
+                setIsWebcamScanning(false);
+            }).catch(() => setIsWebcamScanning(false));
         } else {
-            const testId = prompt('Введите ID гостя из его QR-кода:', '');
-            if (testId) fetchClientData(testId.replace('mangal_guest_', '').trim());
+            setIsWebcamScanning(false);
         }
     };
 
@@ -202,7 +264,7 @@ export default function App() {
             .then(res => res.json())
             .then(client => {
                 setScannedClient(client);
-                setNotesInput(client.notes || '');
+                setNotesInput(client.clientNotes || '');
             });
     };
 
@@ -227,6 +289,23 @@ export default function App() {
         });
     };
 
+    const handleSaveNotes = (table) => {
+        fetch(`${BACKEND_URL}/api/staff/update-client-notes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: table.userId,
+                notes: table.notes,
+                tableNum: table.tableNum
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            setActiveTables(data.activeTables);
+            alert('Заметка сохранена за гостем навсегда!');
+        });
+    };
+
     const handleCloseTable = (tableNum) => {
         if (!orderSumInput) return alert('Введите сумму заказа');
         fetch(`${BACKEND_URL}/api/staff/close-table`, {
@@ -239,7 +318,7 @@ export default function App() {
         })
         .then(res => res.json())
         .then(data => {
-            alert(`Стол №${tableNum} закрыт! Начислено бонусов гостю: ${data.cashbackAwarded.toLocaleString()} ₫`);
+            alert(`Стол №${tableNum} закрыт! Начислен кешбэк 3%: ${data.cashbackAwarded.toLocaleString()} ₫`);
             setActiveTables(data.activeTables);
             setSelectedTable(null);
             setOrderSumInput('');
@@ -298,9 +377,7 @@ export default function App() {
         }
     };
 
-    // ==========================================
-    // 1. ПУЛЬТ ПЕРСОНАЛА
-    // ==========================================
+    // ПУЛЬТ ПЕРСОНАЛА
     if (isStaff) {
         return (
             <div className="app-container" style={{ padding: '16px' }}>
@@ -340,11 +417,21 @@ export default function App() {
                             📷 Сканировать QR гостя
                         </button>
 
+                        {isWebcamScanning && (
+                            <div style={{ background: '#111', padding: '16px', borderRadius: '16px', border: '2px solid #ff9800', marginBottom: '20px', textAlign: 'center' }}>
+                                <h4 style={{ margin: '0 0 10px 0', color: '#ff9800' }}>Камера активна: наведите на QR</h4>
+                                <div id="reader" style={{ width: '100%', maxWidth: '300px', margin: '0 auto' }}></div>
+                                <button onClick={stopWebcamScanner} style={{ marginTop: '12px', padding: '10px 20px', background: '#555', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer' }}>
+                                    Закрыть камеру
+                                </button>
+                            </div>
+                        )}
+
                         {scannedClient && (
                             <div style={{ background: '#1c1c24', border: '1px solid #ff9800', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
                                 <h3 style={{ margin: '0 0 6px 0', color: '#ff9800' }}>Гость: {scannedClient.firstName}</h3>
                                 <p style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#bbb' }}>
-                                    Баланс: {scannedClient.bonusBalance || 0} ₫ | Статус: {scannedClient.level || 'Серебро'}
+                                    Баланс: {scannedClient.bonusBalance || 0} ₫ | Кешбэк: 3%
                                 </p>
                                 <input 
                                     type="text" 
@@ -353,11 +440,12 @@ export default function App() {
                                     onChange={e => setTableInput(e.target.value)}
                                     style={{ width: '92%', padding: '12px', borderRadius: '10px', background: '#2a2a35', border: '1px solid #555', color: '#fff', marginBottom: '10px' }}
                                 />
+                                <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '4px' }}>Постоянные заметки гостя (сохраняются навсегда):</div>
                                 <textarea 
-                                    placeholder="Примечания (кальян, пожелания)" 
+                                    placeholder="Предпочтения, аллергии, любимый кальян и напитки..." 
                                     value={notesInput} 
                                     onChange={e => setNotesInput(e.target.value)}
-                                    style={{ width: '92%', padding: '12px', borderRadius: '10px', background: '#2a2a35', border: '1px solid #555', color: '#fff', marginBottom: '10px' }}
+                                    style={{ width: '92%', minHeight: '60px', padding: '12px', borderRadius: '10px', background: '#2a2a35', border: '1px solid #ff9800', color: '#fff', marginBottom: '10px' }}
                                 />
                                 <div style={{ display: 'flex', gap: '10px' }}>
                                     <button onClick={handleSeatGuest} style={{ flex: 1, padding: '12px', background: '#4caf50', border: 'none', borderRadius: '10px', color: '#fff', fontWeight: 'bold' }}>
@@ -425,11 +513,22 @@ export default function App() {
                             <button className="close-btn" onClick={() => setSelectedTable(null)}>×</button>
                             <h2 style={{ color: '#ff9800', marginTop: 0 }}>Стол №{selectedTable.tableNum}</h2>
                             <p style={{ fontSize: '16px', margin: '5px 0' }}>Гость: <b>{selectedTable.clientName}</b></p>
-                            <p style={{ fontSize: '13px', color: '#bbb' }}>Статус: {selectedTable.clientLevel}</p>
-                            <div style={{ background: '#25252d', padding: '12px', borderRadius: '10px', margin: '15px 0', textAlign: 'left', fontSize: '13px' }}>
-                                <b>Примечания:</b>
-                                <p style={{ margin: '5px 0 0 0', color: '#ccc' }}>{selectedTable.notes || 'Нет примечаний'}</p>
+                            
+                            <div style={{ background: '#25252d', padding: '12px', borderRadius: '10px', margin: '15px 0', textAlign: 'left' }}>
+                                <b style={{ fontSize: '13px' }}>Постоянные заметки гостя (видны всем сотрудникам):</b>
+                                <textarea 
+                                    value={selectedTable.notes || ''}
+                                    onChange={(e) => setSelectedTable({ ...selectedTable, notes: e.target.value })}
+                                    style={{ width: '92%', minHeight: '50px', background: '#1a1a20', border: '1px solid #555', borderRadius: '8px', color: '#eee', padding: '8px', marginTop: '6px' }}
+                                />
+                                <button 
+                                    onClick={() => handleSaveNotes(selectedTable)}
+                                    style={{ marginTop: '6px', background: '#ff9800', border: 'none', borderRadius: '6px', padding: '6px 12px', color: '#000', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}
+                                >
+                                    💾 Сохранить заметку в профиль
+                                </button>
                             </div>
+
                             <input 
                                 type="number" 
                                 placeholder="Сумма заказа в VND" 
@@ -437,11 +536,12 @@ export default function App() {
                                 onChange={e => setOrderSumInput(e.target.value)}
                                 style={{ width: '90%', padding: '14px', borderRadius: '12px', background: '#333', border: '1px solid #666', color: '#fff', fontSize: '18px', marginBottom: '15px', textAlign: 'center' }}
                             />
+                            
                             <button 
                                 onClick={() => handleCloseTable(selectedTable.tableNum)}
-                                style={{ width: '100%', padding: '16px', background: '#e53935', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 'bold', fontSize: '16px' }}
+                                style={{ width: '100%', padding: '16px', background: '#e53935', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}
                             >
-                                💳 Закрыть стол и начислить баллы
+                                💳 Закрыть стол (начислить 3%)
                             </button>
                         </div>
                     </div>
@@ -496,9 +596,7 @@ export default function App() {
         );
     }
 
-    // ==========================================
-    // 2. КЛИЕНТСКИЙ ИНТЕРФЕЙС
-    // ==========================================
+    // КЛИЕНТСКИЙ ИНТЕРФЕЙС
     const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=mangal_guest_${user?.id || 'demo'}`;
     const filteredProducts = activeCategory === 'Все' 
         ? products 
@@ -537,8 +635,8 @@ export default function App() {
             <div className="cashback-ticker">
                 <marquee>
                     {brand === 'Mangal' 
-                        ? "⚡ Кешбэк 10% • Скидка 50k VND на угли • Пригласи друга и получи 5% с его заказов!"
-                        : "❄️ Свежая поставка пельменей • Скидка 10% на премиум стейки при заказе от 500k VND"}
+                        ? "⚡ Кешбэк 3% • Скидка 50k VND на угли • Пригласи друга и получи 5% с его заказов!"
+                        : "❄️ Свежая поставка пельменей • Премиум стейки со скидкой при заказе от 500k VND"}
                 </marquee>
             </div>
 
@@ -600,7 +698,7 @@ export default function App() {
                     <div className="modal-content" onClick={e => e.stopPropagation()}>
                         <button className="close-btn" onClick={() => setIsQrModalOpen(false)}>×</button>
                         <h3 style={{ margin: '0 0 8px 0', fontSize: '20px', color: '#ff9800' }}>Ваш персональный QR</h3>
-                        <p style={{ margin: '0 0 14px 0', fontSize: '13px', color: '#bbb' }}>Покажите официанту для начисления кешбэка</p>
+                        <p style={{ margin: '0 0 14px 0', fontSize: '13px', color: '#bbb' }}>Покажите официанту для начисления кешбэка 3%</p>
                         <div style={{ background: '#fff', padding: '12px', borderRadius: '16px', display: 'inline-block', marginBottom: '14px' }}>
                             <img src={qrDataUrl} alt="QR Code" style={{ width: '200px', height: '200px', display: 'block' }} />
                         </div>
@@ -609,7 +707,6 @@ export default function App() {
                 </div>
             )}
 
-            {/* Личный кабинет */}
             <div className={`modal-overlay ${isCabinetOpen ? 'active' : ''}`} onClick={() => setIsCabinetOpen(false)}>
                 <div className="modal-content" onClick={e => e.stopPropagation()}>
                     <button className="close-btn" onClick={() => setIsCabinetOpen(false)}>×</button>
@@ -641,7 +738,7 @@ export default function App() {
                         )}
                     </div>
 
-                    <p style={{ margin: 0, color: '#bbb', fontSize: '14px', marginBottom: '10px' }}>Статус: <b style={{color: '#ff9800'}}>{user?.level || 'Серебро'}</b></p>
+                    <p style={{ margin: 0, color: '#bbb', fontSize: '14px', marginBottom: '10px' }}>Статус: <b style={{color: '#ff9800'}}>{user?.level || 'Серебро'}</b> (Кешбэк 3%)</p>
                     <div style={{ fontSize: '12px', color: '#777', marginBottom: '15px' }}>
                         Ваш ID: {user?.id}
                     </div>
@@ -661,7 +758,7 @@ export default function App() {
 
                         {(!user?.referrals || user.referrals.length === 0) ? (
                             <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '12px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
-                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс!
+                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_2](start_span)[span_2](end_span)!
                             </div>
                         ) : (
                             <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -681,7 +778,7 @@ export default function App() {
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
                                             <div style={{ color: '#4caf50', fontWeight: 'bold', fontSize: '13px' }}>
-                                                +{friend.earnedFromUser.toLocaleString()} ₫
+                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_3](start_span)[span_3](end_span)
                                             </div>
                                             <div style={{ fontSize: '10px', color: '#777' }}>доход 5%</div>
                                         </div>

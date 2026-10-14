@@ -50,24 +50,65 @@ const AnimatedPanda = () => {
     );
 };
 
+// Функция надежного определения реального пользователя из Telegram
+function getRealTelegramUser() {
+    const tg = window.Telegram?.WebApp;
+    if (tg?.initDataUnsafe?.user?.id) {
+        return {
+            id: String(tg.initDataUnsafe.user.id),
+            firstName: tg.initDataUnsafe.user.first_name || 'Гость',
+            photoUrl: tg.initDataUnsafe.user.photo_url || ''
+        };
+    }
+
+    // Попытка распарсить строку initData из URL
+    try {
+        const urlParams = new URLSearchParams(window.location.hash.substring(1));
+        const initDataRaw = urlParams.get('tgWebAppData');
+        if (initDataRaw) {
+            const dataParams = new URLSearchParams(initDataRaw);
+            const userJson = dataParams.get('user');
+            if (userJson) {
+                const parsed = JSON.parse(userJson);
+                return {
+                    id: String(parsed.id),
+                    firstName: parsed.first_name || 'Гость',
+                    photoUrl: parsed.photo_url || ''
+                };
+            }
+        }
+    } catch (e) {
+        console.error(e);
+    }
+
+    // Если запуск идет вне Telegram — генерируем и запоминаем уникальный ID для каждого устройства
+    let localId = localStorage.getItem('mangal_device_id');
+    if (!localId) {
+        localId = 'guest_' + Math.floor(100000 + Math.random() * 900000);
+        localStorage.setItem('mangal_device_id', localId);
+    }
+    return {
+        id: localId,
+        firstName: 'Гость',
+        photoUrl: ''
+    };
+}
+
 export default function App() {
     const [brand, setBrand] = useState('Mangal'); 
     const [isCabinetOpen, setIsCabinetOpen] = useState(false);
     const [isQrModalOpen, setIsQrModalOpen] = useState(false);
     
-    // Профиль гостя
     const [user, setUser] = useState(null);
     const [isEditingName, setIsEditingName] = useState(false);
     const [customName, setCustomName] = useState('');
 
-    // Каталог товаров Mr. Po
     const [products, setProducts] = useState([]);
     const [activeCategory, setActiveCategory] = useState('Все');
 
-    // Режим персонала
     const [isStaff, setIsStaff] = useState(false);
     const [staffInfo, setStaffInfo] = useState(null);
-    const [staffTab, setStaffTab] = useState('tables'); // 'tables' или 'products'
+    const [staffTab, setStaffTab] = useState('tables');
     const [activeTables, setActiveTables] = useState({});
     const [selectedTable, setSelectedTable] = useState(null);
     const [scannedClient, setScannedClient] = useState(null);
@@ -75,7 +116,6 @@ export default function App() {
     const [notesInput, setNotesInput] = useState('');
     const [orderSumInput, setOrderSumInput] = useState('');
 
-    // Форма редактирования/добавления товаров для персонала
     const [editingProduct, setEditingProduct] = useState(null);
     const [prodName, setProdName] = useState('');
     const [prodCategory, setProdCategory] = useState('Мясо');
@@ -90,7 +130,8 @@ export default function App() {
             tg.ready();
             tg.expand();
         }
-        const tgUser = tg?.initDataUnsafe?.user || { id: 123456789, first_name: 'Гость', photo_url: '' };
+
+        const tgUser = getRealTelegramUser();
         const startParam = tg?.initDataUnsafe?.start_param || '';
 
         fetch(`${BACKEND_URL}/api/init-user`, {
@@ -98,29 +139,41 @@ export default function App() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 userId: tgUser.id,
-                firstName: tgUser.first_name,
-                photoUrl: tgUser.photo_url || '',
+                firstName: tgUser.firstName,
+                photoUrl: tgUser.photoUrl,
                 startParam: startParam
             })
         })
         .then(res => res.json())
         .then(data => {
             setUser(data.user);
-            setCustomName(data.user?.firstName || tgUser.first_name);
+            setCustomName(data.user?.firstName || tgUser.firstName);
             setIsStaff(Boolean(data.isStaff));
             setStaffInfo(data.staffInfo);
             if (data.activeTables) setActiveTables(data.activeTables);
             if (data.products) setProducts(data.products);
         })
-        .catch(err => console.log('Синхронизация:', err));
+        .catch(err => console.log('Ошибка связи с сервером:', err));
     }, []);
+
+    const shareInviteLink = () => {
+        const inviteLink = `https://t.me/mangal_lounge_bot?startapp=ref_${user?.id || ''}`;
+        const messageText = "Держи 300 бонусов в Mangal Lounge! Открывай меню и пробуй сочные стейки:";
+        const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(messageText)}`;
+        
+        if (window.Telegram?.WebApp?.openTelegramLink) {
+            window.Telegram.WebApp.openTelegramLink(tgUrl);
+        } else {
+            window.open(tgUrl, '_blank');
+        }
+    };
 
     const saveNewName = () => {
         if (!customName.trim() || !user) return;
         fetch(`${BACKEND_URL}/api/user/update-name`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: user.id, newName: customName })
+            body: JSON.stringify({ userId: user.id, newName: customName.trim() })
         })
         .then(res => res.json())
         .then(data => {
@@ -135,14 +188,14 @@ export default function App() {
         const tg = window.Telegram?.WebApp;
         if (tg?.showScanQrPopup) {
             tg.showScanQrPopup({ text: 'Наведите камеру на QR-код гостя' }, (scannedText) => {
-                const clientId = scannedText.replace('mangal_guest_', '');
+                const clientId = scannedText.replace('mangal_guest_', '').trim();
                 fetchClientData(clientId);
                 tg.closeScanQrPopup();
                 return true;
             });
         } else {
-            const testId = prompt('Введите Telegram ID гостя:', '123456789');
-            if (testId) fetchClientData(testId.replace('mangal_guest_', ''));
+            const testId = prompt('Введите ID гостя из его QR-кода:', '');
+            if (testId) fetchClientData(testId.replace('mangal_guest_', '').trim());
         }
     };
 
@@ -195,37 +248,31 @@ export default function App() {
         });
     };
 
-    // Операции персонала с каталогом Mr. Po
     const handleSaveProduct = () => {
         if (!prodName || !prodPrice) return alert('Укажите название и цену');
         const endpoint = editingProduct?.id ? '/api/products/update' : '/api/products/add';
-        const payload = {
-            id: editingProduct?.id,
-            name: prodName,
-            category: prodCategory,
-            stock: Number(prodStock),
-            price: Number(prodPrice)
-        };
-
         fetch(`${BACKEND_URL}${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+                id: editingProduct?.id,
+                name: prodName,
+                category: prodCategory,
+                stock: Number(prodStock),
+                price: Number(prodPrice)
+            })
         })
         .then(res => res.json())
         .then(data => {
             if (data.success) {
                 setProducts(data.products);
                 setEditingProduct(null);
-                setProdName('');
-                setProdStock('');
-                setProdPrice('');
             }
         });
     };
 
     const handleDeleteProduct = (id) => {
-        if (!confirm('Удалить эту позицию?')) return;
+        if (!confirm('Удалить позицию?')) return;
         fetch(`${BACKEND_URL}/api/products/delete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -253,8 +300,17 @@ export default function App() {
         }
     };
 
+    // Переключатель тестового аккаунта для проверки со смартфона или ПК
+    const switchTestAccount = () => {
+        const inputId = prompt('Для теста введите Telegram ID (Влада: 848502221, Никита: 5676195545, Дастан: 6804474400, Полина: 1787388463):');
+        if (inputId) {
+            localStorage.setItem('mangal_device_id', inputId.trim());
+            window.location.reload();
+        }
+    };
+
     // ==========================================
-    // 1. ПУЛЬТ ПЕРСОНАЛА (ОФИЦИАНТСКОЕ ПРИЛОЖЕНИЕ)
+    // 1. ПУЛЬТ ПЕРСОНАЛА
     // ==========================================
     if (isStaff) {
         return (
@@ -266,28 +322,29 @@ export default function App() {
                         </h2>
                         <span style={{ fontSize: '11px', color: '#888' }}>Mangal Lounge Staff</span>
                     </div>
-                    <span style={{ fontSize: '12px', background: '#2a2a35', padding: '6px 12px', borderRadius: '10px', border: '1px solid #444' }}>
-                        ID: {user?.id}
-                    </span>
+                    <button 
+                        onClick={switchTestAccount}
+                        style={{ fontSize: '11px', background: '#2a2a35', color: '#bbb', padding: '6px 10px', borderRadius: '8px', border: '1px solid #444', cursor: 'pointer' }}
+                    >
+                        ID: {user?.id} 🔄
+                    </button>
                 </header>
 
-                {/* Навигация персонала: Столы / Продукция */}
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                     <button 
                         onClick={() => setStaffTab('tables')}
-                        style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: staffTab === 'tables' ? 'var(--accent-amber)' : '#2a2a35', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}
+                        style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: staffTab === 'tables' ? 'var(--accent-amber)' : '#2a2a35', color: '#fff', fontWeight: 'bold' }}
                     >
                         🍽️ Столы ({Object.keys(activeTables).length})
                     </button>
                     <button 
                         onClick={() => setStaffTab('products')}
-                        style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: staffTab === 'products' ? '#e94560' : '#2a2a35', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}
+                        style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: staffTab === 'products' ? '#e94560' : '#2a2a35', color: '#fff', fontWeight: 'bold' }}
                     >
                         🥩 Продукция Mr. Po
                     </button>
                 </div>
 
-                {/* Вкладка 1: Столы и сканер */}
                 {staffTab === 'tables' && (
                     <>
                         <button 
@@ -305,13 +362,13 @@ export default function App() {
                                 </p>
                                 <input 
                                     type="text" 
-                                    placeholder="Номер столика (напр. 4)" 
+                                    placeholder="Номер столика" 
                                     value={tableInput} 
                                     onChange={e => setTableInput(e.target.value)}
                                     style={{ width: '92%', padding: '12px', borderRadius: '10px', background: '#2a2a35', border: '1px solid #555', color: '#fff', marginBottom: '10px' }}
                                 />
                                 <textarea 
-                                    placeholder="Примечания (кальян, блюда, пожелания)" 
+                                    placeholder="Примечания (кальян, пожелания)" 
                                     value={notesInput} 
                                     onChange={e => setNotesInput(e.target.value)}
                                     style={{ width: '92%', padding: '12px', borderRadius: '10px', background: '#2a2a35', border: '1px solid #555', color: '#fff', marginBottom: '10px' }}
@@ -330,7 +387,7 @@ export default function App() {
                         <h3 style={{ fontSize: '16px', color: '#aaa', marginBottom: '12px' }}>Активные столы:</h3>
                         {Object.keys(activeTables).length === 0 ? (
                             <div style={{ padding: '30px', textAlign: 'center', background: '#181820', borderRadius: '16px', color: '#666', border: '1px dashed #333' }}>
-                                Нет открытых столов. Нажмите «Сканировать QR», чтобы посадить гостей.
+                                Нет открытых столов.
                             </div>
                         ) : (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -350,16 +407,14 @@ export default function App() {
                     </>
                 )}
 
-                {/* Вкладка 2: Управление каталогом Mr. Po */}
                 {staffTab === 'products' && (
                     <div>
                         <button 
                             onClick={() => openEditModal()}
-                            style={{ width: '100%', padding: '14px', background: '#e94560', color: 'white', border: 'none', borderRadius: '12px', marginBottom: '16px', fontWeight: 'bold', fontSize: '15px', cursor: 'pointer' }}
+                            style={{ width: '100%', padding: '14px', background: '#e94560', color: 'white', border: 'none', borderRadius: '12px', marginBottom: '16px', fontWeight: 'bold', fontSize: '15px' }}
                         >
                             + Добавить новую позицию
                         </button>
-
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {products.map(p => (
                                 <div key={p.id} style={{ background: '#1c1c28', border: '1px solid #333', borderRadius: '14px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -369,8 +424,8 @@ export default function App() {
                                         <div style={{ color: '#e94560', fontWeight: 'bold', marginTop: '4px' }}>{p.price.toLocaleString()} ₫</div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                        <button onClick={() => openEditModal(p)} style={{ background: '#333', border: '1px solid #555', color: '#fff', borderRadius: '8px', padding: '8px 12px', cursor: 'pointer' }}>✏️</button>
-                                        <button onClick={() => handleDeleteProduct(p.id)} style={{ background: '#442222', border: '1px solid #e53935', color: '#fff', borderRadius: '8px', padding: '8px 12px', cursor: 'pointer' }}>🗑️</button>
+                                        <button onClick={() => openEditModal(p)} style={{ background: '#333', border: '1px solid #555', color: '#fff', borderRadius: '8px', padding: '8px 12px' }}>✏️</button>
+                                        <button onClick={() => handleDeleteProduct(p.id)} style={{ background: '#442222', border: '1px solid #e53935', color: '#fff', borderRadius: '8px', padding: '8px 12px' }}>🗑️</button>
                                     </div>
                                 </div>
                             ))}
@@ -378,7 +433,6 @@ export default function App() {
                     </div>
                 )}
 
-                {/* Модалка закрытия счета */}
                 {selectedTable && (
                     <div className="modal-overlay active" onClick={() => setSelectedTable(null)}>
                         <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -386,12 +440,10 @@ export default function App() {
                             <h2 style={{ color: '#ff9800', marginTop: 0 }}>Стол №{selectedTable.tableNum}</h2>
                             <p style={{ fontSize: '16px', margin: '5px 0' }}>Гость: <b>{selectedTable.clientName}</b></p>
                             <p style={{ fontSize: '13px', color: '#bbb' }}>Статус: {selectedTable.clientLevel}</p>
-                            
                             <div style={{ background: '#25252d', padding: '12px', borderRadius: '10px', margin: '15px 0', textAlign: 'left', fontSize: '13px' }}>
                                 <b>Примечания:</b>
                                 <p style={{ margin: '5px 0 0 0', color: '#ccc' }}>{selectedTable.notes || 'Нет примечаний'}</p>
                             </div>
-
                             <input 
                                 type="number" 
                                 placeholder="Сумма заказа в VND" 
@@ -399,10 +451,9 @@ export default function App() {
                                 onChange={e => setOrderSumInput(e.target.value)}
                                 style={{ width: '90%', padding: '14px', borderRadius: '12px', background: '#333', border: '1px solid #666', color: '#fff', fontSize: '18px', marginBottom: '15px', textAlign: 'center' }}
                             />
-                            
                             <button 
                                 onClick={() => handleCloseTable(selectedTable.tableNum)}
-                                style={{ width: '100%', padding: '16px', background: '#e53935', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}
+                                style={{ width: '100%', padding: '16px', background: '#e53935', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 'bold', fontSize: '16px' }}
                             >
                                 💳 Закрыть стол и начислить баллы
                             </button>
@@ -410,7 +461,6 @@ export default function App() {
                     </div>
                 )}
 
-                {/* Модалка создания/редактирования товара */}
                 {editingProduct && (
                     <div className="modal-overlay active" onClick={() => setEditingProduct(null)}>
                         <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -449,7 +499,7 @@ export default function App() {
                             />
                             <button 
                                 onClick={handleSaveProduct}
-                                style={{ width: '100%', padding: '14px', background: '#4caf50', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}
+                                style={{ width: '100%', padding: '14px', background: '#4caf50', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 'bold', fontSize: '16px' }}
                             >
                                 Сохранить
                             </button>
@@ -461,10 +511,9 @@ export default function App() {
     }
 
     // ==========================================
-    // 2. КЛИЕНТСКИЙ ИНТЕРФЕЙС (MANGAL LOUNGE & MR. PO)
+    // 2. КЛИЕНТСКИЙ ИНТЕРФЕЙС
     // ==========================================
-    const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=mangal_guest_${user?.id || 123456789}`;
-
+    const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=mangal_guest_${user?.id || 'demo'}`;
     const filteredProducts = activeCategory === 'Все' 
         ? products 
         : products.filter(p => p.category === activeCategory);
@@ -502,7 +551,7 @@ export default function App() {
             <div className="cashback-ticker">
                 <marquee>
                     {brand === 'Mangal' 
-                        ? "⚡ Кешбэк 10% • Скидка 50k VND на угли • Пригласи друга и получи бонусы!"
+                        ? "⚡ Кешбэк 10% • Скидка 50k VND на угли • Пригласи друга и получи 5% с его заказов!"
                         : "❄️ Свежая поставка пельменей • Скидка 10% на премиум стейки при заказе от 500k VND"}
                 </marquee>
             </div>
@@ -528,9 +577,12 @@ export default function App() {
                         </button>
                     </>
                 )}
+
+                <button className="btn btn-wide btn-invite" onClick={shareInviteLink}>
+                    <span style={{ fontSize: '22px', marginRight: '10px' }}>🎁</span> Пригласить друга (+300 баллов и 5% с чеков)
+                </button>
             </div>
 
-            {/* Каталог продукции Mr. Po для гостей (кнопка добавления скрыта) */}
             {brand === 'MrPo' && (
                 <div className="mrpo-catalog">
                     <div className="tabs">
@@ -557,7 +609,6 @@ export default function App() {
                 </div>
             )}
 
-            {/* Модалка QR-кода гостя */}
             {isQrModalOpen && (
                 <div className="modal-overlay active" onClick={() => setIsQrModalOpen(false)}>
                     <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -594,7 +645,7 @@ export default function App() {
                                     onChange={e => setCustomName(e.target.value)} 
                                     style={{ padding: '6px 10px', borderRadius: '8px', background: '#333', border: '1px solid #ff9800', color: '#fff', fontSize: '16px' }}
                                 />
-                                <button onClick={saveNewName} style={{ background: '#4caf50', border: 'none', borderRadius: '8px', color: '#fff', padding: '6px 10px', cursor: 'pointer' }}>✓</button>
+                                <button onClick={saveNewName} style={{ background: '#4caf50', border: 'none', borderRadius: '8px', color: '#fff', padding: '6px 10px' }}>✓</button>
                             </div>
                         ) : (
                             <>
@@ -604,9 +655,58 @@ export default function App() {
                         )}
                     </div>
 
-                    <p style={{ margin: 0, color: '#bbb', fontSize: '14px', marginBottom: '20px' }}>Статус: <b style={{color: '#ff9800'}}>{user?.level || 'Серебро'}</b></p>
-                    <h2 style={{ margin: '0 0 10px 0', fontSize: '32px', fontWeight: '800' }}>{user?.bonusBalance !== undefined ? user.bonusBalance : 300} ₫</h2>
+                    <p style={{ margin: 0, color: '#bbb', fontSize: '14px', marginBottom: '10px' }}>Статус: <b style={{color: '#ff9800'}}>{user?.level || 'Серебро'}</b></p>
+                    <div style={{ fontSize: '12px', color: '#777', marginBottom: '15px' }}>
+                        Ваш ID: {user?.id}{' '}
+                        <button onClick={switchTestAccount} style={{ background: 'none', border: 'none', color: '#ff9800', cursor: 'pointer', textDecoration: 'underline' }}>
+                            [сменить для теста]
+                        </button>
+                    </div>
+
+                    <h2 style={{ margin: '0 0 10px 0', fontSize: '32px', fontWeight: '800' }}>{user?.bonusBalance !== undefined ? user.bonusBalance.toLocaleString() : 300} ₫</h2>
                     <EliteProgressBar progress={75} />
+
+                    <div style={{ marginTop: '20px', textAlign: 'left', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '15px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <span style={{ fontSize: '14px', fontWeight: 'bold', color: 'var(--accent-amber)' }}>
+                                Приглашенные друзья
+                            </span>
+                            <span style={{ fontSize: '12px', color: '#888' }}>
+                                Всего: {user?.referrals?.length || 0}
+                            </span>
+                        </div>
+
+                        {(!user?.referrals || user.referrals.length === 0) ? (
+                            <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '12px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
+                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс!
+                            </div>
+                        ) : (
+                            <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {user.referrals.map((friend, idx) => (
+                                    <div key={idx} style={{
+                                        background: 'rgba(255,255,255,0.05)',
+                                        padding: '8px 12px',
+                                        borderRadius: '10px',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        borderLeft: '3px solid var(--accent-amber)'
+                                    }}>
+                                        <div>
+                                            <div style={{ fontSize: '13px', fontWeight: '600' }}>👤 {friend.name}</div>
+                                            <div style={{ fontSize: '11px', color: '#777' }}>с {friend.joinedAt}</div>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ color: '#4caf50', fontWeight: 'bold', fontSize: '13px' }}>
+                                                +{friend.earnedFromUser.toLocaleString()} ₫
+                                            </div>
+                                            <div style={{ fontSize: '10px', color: '#777' }}>доход 5%</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

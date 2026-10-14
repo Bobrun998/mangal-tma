@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import './index.css';
 
 const EliteProgressBar = ({ progress }) => {
@@ -132,9 +132,6 @@ export default function App() {
     const [notesInput, setNotesInput] = useState('');
     const [orderSumInput, setOrderSumInput] = useState('');
 
-    const [isWebcamScanning, setIsWebcamScanning] = useState(false);
-    const html5QrCodeRef = useRef(null);
-
     const [editingProduct, setEditingProduct] = useState(null);
     const [prodName, setProdName] = useState('');
     const [prodCategory, setProdCategory] = useState('Мясо');
@@ -175,10 +172,8 @@ export default function App() {
         .catch(err => console.log('Ошибка связи с сервером:', err));
     }, []);
 
-    // Реферальная ссылка, совместимая со всеми клиентами Telegram
     const shareInviteLink = () => {
         const userId = user?.id || '123456';
-        // Канонический формат Mini App ссылки
         const inviteLink = `https://t.me/mangal_lounge_bot/app?startapp=ref_${userId}`;
         const messageText = "Держи 300 бонусов в Mangal Lounge! Открывай меню и пробуй сочные блюда:";
         const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(messageText)}`;
@@ -206,56 +201,20 @@ export default function App() {
         });
     };
 
+    // Нативный сканер Telegram без багов
     const handleScanQr = () => {
         const tg = window.Telegram?.WebApp;
-        if (tg?.showScanQrPopup && tg.isVersionAtLeast && tg.isVersionAtLeast('6.4')) {
-            try {
-                tg.showScanQrPopup({ text: 'Наведите камеру на QR-код гостя' }, (scannedText) => {
-                    const clientId = scannedText.replace('mangal_guest_', '').trim();
-                    fetchClientData(clientId);
-                    tg.closeScanQrPopup();
-                    return true;
-                });
-                return;
-            } catch (e) {
-                console.log(e);
-            }
-        }
 
-        setIsWebcamScanning(true);
-        setTimeout(() => {
-            if (window.Html5Qrcode) {
-                const scanner = new window.Html5Qrcode("reader");
-                html5QrCodeRef.current = scanner;
-                scanner.start(
-                    { facingMode: "environment" },
-                    { fps: 10, qrbox: { width: 220, height: 220 } },
-                    (decodedText) => {
-                        const clientId = decodedText.replace('mangal_guest_', '').trim();
-                        fetchClientData(clientId);
-                        stopWebcamScanner();
-                    },
-                    () => {}
-                ).catch(() => {
-                    stopWebcamScanner();
-                    const testId = prompt('Камера недоступна. Введите ID гостя вручную:');
-                    if (testId) fetchClientData(testId.replace('mangal_guest_', '').trim());
-                });
-            } else {
-                const testId = prompt('Введите ID гостя:');
-                if (testId) fetchClientData(testId.replace('mangal_guest_', '').trim());
-            }
-        }, 150);
-    };
-
-    const stopWebcamScanner = () => {
-        if (html5QrCodeRef.current) {
-            html5QrCodeRef.current.stop().then(() => {
-                html5QrCodeRef.current.clear();
-                setIsWebcamScanning(false);
-            }).catch(() => setIsWebcamScanning(false));
+        if (tg && typeof tg.showScanQrPopup === 'function') {
+            tg.showScanQrPopup({ text: 'Наведите камеру на QR-код гостя' }, (scannedText) => {
+                const clientId = scannedText.replace('mangal_guest_', '').trim();
+                fetchClientData(clientId);
+                tg.closeScanQrPopup();
+                return true;
+            });
         } else {
-            setIsWebcamScanning(false);
+            const manualId = prompt('Введите ID гостя с его экрана (или под QR):');
+            if (manualId) fetchClientData(manualId.replace('mangal_guest_', '').trim());
         }
     };
 
@@ -265,7 +224,8 @@ export default function App() {
             .then(client => {
                 setScannedClient(client);
                 setNotesInput(client.clientNotes || '');
-            });
+            })
+            .catch(err => console.log('Ошибка получения данных клиента:', err));
     };
 
     const handleSeatGuest = () => {
@@ -377,19 +337,21 @@ export default function App() {
         }
     };
 
-    // ПУЛЬТ ПЕРСОНАЛА
+    // ==========================================
+    // 1. ПУЛЬТ ПЕРСОНАЛА
+    // ==========================================
     if (isStaff) {
         return (
             <div className="app-container" style={{ padding: '16px' }}>
                 <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <div>
                         <h2 style={{ margin: 0, color: 'var(--accent-amber)', fontSize: '20px' }}>
-                            {staffInfo?.name} ({staffInfo?.title})
+                            {staffInfo?.name} ({staffInfo?.title})[span_2](start_span)[span_2](end_span)
                         </h2>
-                        <span style={{ fontSize: '11px', color: '#888' }}>Mangal Lounge Staff</span>
+                        <span style={{ fontSize: '11px', color: '#888' }}>Mangal Lounge Staff[span_3](start_span)[span_3](end_span)</span>
                     </div>
                     <span style={{ fontSize: '12px', background: '#2a2a35', padding: '6px 12px', borderRadius: '10px', border: '1px solid #444', color: '#bbb' }}>
-                        ID: {user?.id}
+                        ID: {user?.id}[span_4](start_span)[span_4](end_span)
                     </span>
                 </header>
 
@@ -398,13 +360,13 @@ export default function App() {
                         onClick={() => setStaffTab('tables')}
                         style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: staffTab === 'tables' ? 'var(--accent-amber)' : '#2a2a35', color: '#fff', fontWeight: 'bold' }}
                     >
-                        🍽️ Столы ({Object.keys(activeTables).length})
+                        🍽️ Столы ({Object.keys(activeTables).length})[span_5](start_span)[span_5](end_span)
                     </button>
                     <button 
                         onClick={() => setStaffTab('products')}
                         style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: staffTab === 'products' ? '#e94560' : '#2a2a35', color: '#fff', fontWeight: 'bold' }}
                     >
-                        🥩 Продукция Mr. Po
+                        🥩 Продукция Mr. Po[span_6](start_span)[span_6](end_span)
                     </button>
                 </div>
 
@@ -412,20 +374,20 @@ export default function App() {
                     <>
                         <button 
                             onClick={handleScanQr}
-                            style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #ff9800, #d84315)', border: 'none', borderRadius: '16px', color: '#fff', fontSize: '18px', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginBottom: '20px', cursor: 'pointer', boxShadow: '0 4px 20px rgba(255,152,0,0.4)' }}
+                            style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #ff9800, #d84315)', border: 'none', borderRadius: '16px', color: '#fff', fontSize: '18px', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginBottom: '14px', cursor: 'pointer', boxShadow: '0 4px 20px rgba(255,152,0,0.4)' }}
                         >
-                            📷 Сканировать QR гостя
+                            📷 Сканировать QR гостя[span_7](start_span)[span_7](end_span)
                         </button>
 
-                        {isWebcamScanning && (
-                            <div style={{ background: '#111', padding: '16px', borderRadius: '16px', border: '2px solid #ff9800', marginBottom: '20px', textAlign: 'center' }}>
-                                <h4 style={{ margin: '0 0 10px 0', color: '#ff9800' }}>Камера активна: наведите на QR</h4>
-                                <div id="reader" style={{ width: '100%', maxWidth: '300px', margin: '0 auto' }}></div>
-                                <button onClick={stopWebcamScanner} style={{ marginTop: '12px', padding: '10px 20px', background: '#555', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer' }}>
-                                    Закрыть камеру
-                                </button>
-                            </div>
-                        )}
+                        <button 
+                            onClick={() => {
+                                const manualId = prompt('Введите ID гостя с экрана:');
+                                if (manualId) fetchClientData(manualId.replace('mangal_guest_', '').trim());
+                            }}
+                            style={{ width: '100%', padding: '10px', background: '#222', border: '1px dashed #555', borderRadius: '12px', color: '#aaa', fontSize: '13px', marginBottom: '20px', cursor: 'pointer' }}
+                        >
+                            ⌨️ Или введите ID гостя вручную
+                        </button>
 
                         {scannedClient && (
                             <div style={{ background: '#1c1c24', border: '1px solid #ff9800', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
@@ -458,10 +420,10 @@ export default function App() {
                             </div>
                         )}
 
-                        <h3 style={{ fontSize: '16px', color: '#aaa', marginBottom: '12px' }}>Активные столы:</h3>
+                        <h3 style={{ fontSize: '16px', color: '#aaa', marginBottom: '12px' }}>Активные столы:[span_8](start_span)[span_8](end_span)</h3>
                         {Object.keys(activeTables).length === 0 ? (
                             <div style={{ padding: '30px', textAlign: 'center', background: '#181820', borderRadius: '16px', color: '#666', border: '1px dashed #333' }}>
-                                Нет открытых столов.
+                                Нет открытых столов.[span_9](start_span)[span_9](end_span)
                             </div>
                         ) : (
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -515,7 +477,7 @@ export default function App() {
                             <p style={{ fontSize: '16px', margin: '5px 0' }}>Гость: <b>{selectedTable.clientName}</b></p>
                             
                             <div style={{ background: '#25252d', padding: '12px', borderRadius: '10px', margin: '15px 0', textAlign: 'left' }}>
-                                <b style={{ fontSize: '13px' }}>Постоянные заметки гостя (видны всем сотрудникам):</b>
+                                <b style={{ fontSize: '13px' }}>Постоянные заметки гостя:</b>
                                 <textarea 
                                     value={selectedTable.notes || ''}
                                     onChange={(e) => setSelectedTable({ ...selectedTable, notes: e.target.value })}
@@ -596,7 +558,9 @@ export default function App() {
         );
     }
 
-    // КЛИЕНТСКИЙ ИНТЕРФЕЙС
+    // ==========================================
+    // 2. КЛИЕНТСКИЙ ИНТЕРФЕЙС
+    // ==========================================
     const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=mangal_guest_${user?.id || 'demo'}`;
     const filteredProducts = activeCategory === 'Все' 
         ? products 
@@ -758,7 +722,7 @@ export default function App() {
 
                         {(!user?.referrals || user.referrals.length === 0) ? (
                             <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '12px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
-                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_2](start_span)[span_2](end_span)!
+                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_10](start_span)[span_10](end_span)!
                             </div>
                         ) : (
                             <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -778,7 +742,7 @@ export default function App() {
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
                                             <div style={{ color: '#4caf50', fontWeight: 'bold', fontSize: '13px' }}>
-                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_3](start_span)[span_3](end_span)
+                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_11](start_span)[span_11](end_span)
                                             </div>
                                             <div style={{ fontSize: '10px', color: '#777' }}>доход 5%</div>
                                         </div>

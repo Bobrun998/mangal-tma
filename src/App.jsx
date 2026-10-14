@@ -168,10 +168,11 @@ export default function App() {
         .catch(err => console.log('Ошибка связи с сервером:', err));
     }, []);
 
-    // Исправленный формат ссылки без 404 ошибки
+    // Реферальная ссылка с точным юзернеймом Mangal_nt_bot
     const shareInviteLink = () => {
-        const userId = user?.id || '123456';
-        const inviteLink = `https://t.me/mangal_lounge_bot?startapp=ref_${userId}`;
+        const userId = user?.id || '581886957';
+        const botUsername = 'Mangal_nt_bot';
+        const inviteLink = `https://t.me/${botUsername}?startapp=ref_${userId}`;
         const messageText = "Держи 300 бонусов в Mangal Lounge! Открывай меню и пробуй сочные блюда:";
         const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(messageText)}`;
         
@@ -628,7 +629,7 @@ export default function App() {
                 )}
 
                 <button className="btn btn-wide btn-invite" onClick={shareInviteLink}>
-                    <span style={{ fontSize: '22px', marginRight: '10px' }}>🎁</span> Пригласить друга (+300 баллов и 5% с чеков)
+                    <span style={{ fontSize: '22px', marginRight: '10px' }}>🎁</span> Пригласить друга (+300 баллов и 5% с чеков)[span_5](start_span)[span_5](end_span)
                 </button>
             </div>
 
@@ -723,7 +724,7 @@ export default function App() {
 
                         {(!user?.referrals || user.referrals.length === 0) ? (
                             <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '12px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
-                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_4](start_span)[span_4](end_span)!
+                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_6](start_span)[span_6](end_span)!
                             </div>
                         ) : (
                             <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -743,7 +744,7 @@ export default function App() {
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
                                             <div style={{ color: '#4caf50', fontWeight: 'bold', fontSize: '13px' }}>
-                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_5](start_span)[span_5](end_span)
+                                                +{friend.earnedFromUser.toLocaleString()} ₫
                                             </div>
                                             <div style={{ fontSize: '10px', color: '#777' }}>доход 5%</div>
                                         </div>

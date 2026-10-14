@@ -97,16 +97,12 @@ function extractStartParam() {
         return tg.initDataUnsafe.start_param;
     }
     const searchParams = new URLSearchParams(window.location.search);
-    if (searchParams.get('tgWebAppStartParam')) {
-        return searchParams.get('tgWebAppStartParam');
-    }
-    if (searchParams.get('startapp')) {
-        return searchParams.get('startapp');
-    }
+    if (searchParams.get('tgWebAppStartParam')) return searchParams.get('tgWebAppStartParam');
+    if (searchParams.get('startapp')) return searchParams.get('startapp');
+    if (searchParams.get('start')) return searchParams.get('start');
+
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    if (hashParams.get('tgWebAppStartParam')) {
-        return hashParams.get('tgWebAppStartParam');
-    }
+    if (hashParams.get('tgWebAppStartParam')) return hashParams.get('tgWebAppStartParam');
     return '';
 }
 
@@ -172,9 +168,10 @@ export default function App() {
         .catch(err => console.log('Ошибка связи с сервером:', err));
     }, []);
 
+    // Исправленный формат ссылки без 404 ошибки
     const shareInviteLink = () => {
         const userId = user?.id || '123456';
-        const inviteLink = `https://t.me/mangal_lounge_bot/app?startapp=ref_${userId}`;
+        const inviteLink = `https://t.me/mangal_lounge_bot?startapp=ref_${userId}`;
         const messageText = "Держи 300 бонусов в Mangal Lounge! Открывай меню и пробуй сочные блюда:";
         const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(messageText)}`;
         
@@ -217,7 +214,7 @@ export default function App() {
                 });
                 return;
             } catch (err) {
-                console.error('Ошибка вызова нативного сканера:', err);
+                console.error('Ошибка нативного сканера:', err);
             }
         }
 
@@ -348,9 +345,7 @@ export default function App() {
         }
     };
 
-    // ==========================================
     // 1. ПУЛЬТ ПЕРСОНАЛА
-    // ==========================================
     if (isStaff) {
         return (
             <div className="app-container" style={{ padding: '16px' }}>
@@ -555,7 +550,7 @@ export default function App() {
                             />
                             <button 
                                 onClick={handleSaveProduct}
-                                style={{ width: '100%', padding: '14px', background: '#4caf50', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}
+                                style={{ width: '100%', padding: '14px', background: '#4caf50', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: 'bold', fontSize: '16px' }}
                             >
                                 Сохранить
                             </button>
@@ -566,9 +561,7 @@ export default function App() {
         );
     }
 
-    // ==========================================
     // 2. КЛИЕНТСКИЙ ИНТЕРФЕЙС
-    // ==========================================
     const qrDataUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=mangal_guest_${user?.id || 'demo'}`;
     const filteredProducts = activeCategory === 'Все' 
         ? products 
@@ -730,7 +723,7 @@ export default function App() {
 
                         {(!user?.referrals || user.referrals.length === 0) ? (
                             <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '12px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
-                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_6](start_span)[span_6](end_span)!
+                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_4](start_span)[span_4](end_span)!
                             </div>
                         ) : (
                             <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -750,7 +743,7 @@ export default function App() {
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
                                             <div style={{ color: '#4caf50', fontWeight: 'bold', fontSize: '13px' }}>
-                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_7](start_span)[span_7](end_span)
+                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_5](start_span)[span_5](end_span)
                                             </div>
                                             <div style={{ fontSize: '10px', color: '#777' }}>доход 5%</div>
                                         </div>

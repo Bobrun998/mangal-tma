@@ -91,26 +91,22 @@ function getRealTelegramUser() {
     };
 }
 
-// Надежное извлечение реферальной метки со всех платформ
 function extractStartParam() {
     const tg = window.Telegram?.WebApp;
     if (tg?.initDataUnsafe?.start_param) {
         return tg.initDataUnsafe.start_param;
     }
 
-    // 1. Поиск в search параметрах URL
     const searchParams = new URLSearchParams(window.location.search);
     if (searchParams.get('tgWebAppStartParam')) return searchParams.get('tgWebAppStartParam');
     if (searchParams.get('startapp')) return searchParams.get('startapp');
     if (searchParams.get('start')) return searchParams.get('start');
 
-    // 2. Поиск в hash параметрах URL
     const hashString = window.location.hash.substring(1);
     const hashParams = new URLSearchParams(hashString);
     if (hashParams.get('tgWebAppStartParam')) return hashParams.get('tgWebAppStartParam');
     if (hashParams.get('start_param')) return hashParams.get('start_param');
 
-    // 3. Поиск внутри tgWebAppData в hash
     const rawData = hashParams.get('tgWebAppData');
     if (rawData) {
         const innerParams = new URLSearchParams(rawData);
@@ -168,14 +164,30 @@ export default function App() {
         })
         .then(res => res.json())
         .then(data => {
-            setUser(data.user);
-            setCustomName(data.user?.firstName || tgUser.firstName);
+            if (data.user) {
+                setUser(data.user);
+                setCustomName(data.user.firstName || tgUser.firstName);
+            }
             setIsStaff(Boolean(data.isStaff));
             setStaffInfo(data.staffInfo);
             if (data.activeTables) setActiveTables(data.activeTables);
             if (data.products) setProducts(data.products);
         })
-        .catch(err => console.log('Ошибка связи с сервером:', err));
+        .catch(err => {
+            console.log('Ошибка связи с сервером:', err);
+            // Если сеть дала сбой, не сбрасывать в безымянного гостя
+            if (!user) {
+                setUser({
+                    id: tgUser.id,
+                    firstName: tgUser.firstName,
+                    photoUrl: tgUser.photoUrl,
+                    bonusBalance: 300,
+                    level: 'Серебро',
+                    referrals: []
+                });
+                setCustomName(tgUser.firstName);
+            }
+        });
     };
 
     useEffect(() => {
@@ -188,7 +200,7 @@ export default function App() {
     }, []);
 
     const shareInviteLink = () => {
-        const userId = user?.id || '581886957';
+        const userId = user?.id || getRealTelegramUser().id;
         const botUsername = 'Mangal_nt_bot';
         const inviteLink = `https://t.me/${botUsername}?startapp=ref_${userId}`;
         const messageText = "Держи 300 бонусов в Mangal Lounge! Открывай меню и пробуй сочные блюда:";
@@ -199,6 +211,30 @@ export default function App() {
         } else {
             window.open(tgUrl, '_blank');
         }
+    };
+
+    const handleManualRefCode = () => {
+        const code = prompt('Введите ID пригласившего друга:');
+        if (!code || !user) return;
+
+        fetch(`${BACKEND_URL}/api/user/apply-ref`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: user.id,
+                refCode: code.trim()
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                alert('Реферальный код успешно применен!');
+                syncUserData();
+            } else {
+                alert(data.error || 'Ошибка применения кода');
+            }
+        })
+        .catch(() => alert('Ошибка соединения с сервером'));
     };
 
     const saveNewName = () => {
@@ -214,7 +250,8 @@ export default function App() {
                 setUser(data.user);
                 setIsEditingName(false);
             }
-        });
+        })
+        .catch(() => alert('Не удалось сохранить имя'));
     };
 
     const handleScanQr = () => {
@@ -593,7 +630,7 @@ export default function App() {
 
             <header className="header">
                 <div className="avatar" onClick={() => {
-                    syncUserData(); // Запрос свежих данных и рефералов при каждом клике на профиль
+                    syncUserData();
                     setIsCabinetOpen(true);
                 }}>
                     {user?.photoUrl ? (
@@ -743,7 +780,7 @@ export default function App() {
 
                         {(!user?.referrals || user.referrals.length === 0) ? (
                             <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '12px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
-                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс[span_5](start_span)[span_5](end_span)!
+                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс!
                             </div>
                         ) : (
                             <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -763,7 +800,7 @@ export default function App() {
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
                                             <div style={{ color: '#4caf50', fontWeight: 'bold', fontSize: '13px' }}>
-                                                +{friend.earnedFromUser.toLocaleString()} ₫[span_6](start_span)[span_6](end_span)
+                                                +{friend.earnedFromUser.toLocaleString()} ₫
                                             </div>
                                             <div style={{ fontSize: '10px', color: '#777' }}>доход 5%</div>
                                         </div>
@@ -771,6 +808,13 @@ export default function App() {
                                 ))}
                             </div>
                         )}
+
+                        <button 
+                            onClick={handleManualRefCode}
+                            style={{ width: '100%', marginTop: '12px', padding: '10px', background: 'transparent', border: '1px dashed #ff9800', borderRadius: '10px', color: '#ff9800', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}
+                        >
+                            ➕ Ввести ID пригласившего друга
+                        </button>
                     </div>
                 </div>
             </div>

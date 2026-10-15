@@ -175,7 +175,6 @@ export default function App() {
         })
         .catch(err => {
             console.log('Ошибка связи с сервером:', err);
-            // Если сеть дала сбой, не сбрасывать в безымянного гостя
             if (!user) {
                 setUser({
                     id: tgUser.id,
@@ -657,7 +656,7 @@ export default function App() {
             <div className="cashback-ticker">
                 <marquee>
                     {brand === 'Mangal' 
-                        ? "⚡ Кешбэк 3% • Скидка 50k VND на угли • Пригласи друга и получи 5% с его заказов!"
+                        ? "⚡ Кешбэк 3% • Скидка 50k VND на угли • Пригласи друга и получи 5% с 1-го чека и 1% со всех последующих!"
                         : "❄️ Свежая поставка пельменей • Премиум стейки со скидкой при заказе от 500k VND"}
                 </marquee>
             </div>
@@ -685,7 +684,7 @@ export default function App() {
                 )}
 
                 <button className="btn btn-wide btn-invite" onClick={shareInviteLink}>
-                    <span style={{ fontSize: '22px', marginRight: '10px' }}>🎁</span> Пригласить друга (+300 баллов и 5% с чеков)
+                    <span style={{ fontSize: '22px', marginRight: '10px' }}>🎁</span> Пригласить друга (+300 баллов, 5% с 1-го чека и 1% далее)
                 </button>
             </div>
 
@@ -780,7 +779,7 @@ export default function App() {
 
                         {(!user?.referrals || user.referrals.length === 0) ? (
                             <div style={{ background: 'rgba(255,255,255,0.04)', padding: '12px', borderRadius: '12px', fontSize: '12px', color: '#888', textAlign: 'center' }}>
-                                Поделитесь ссылкой и получайте 5% с каждого чека друзей бонусами на баланс!
+                                Приглашайте друзей: получайте 5% с их 1-го заказа и 1% со всех последующих чеков!
                             </div>
                         ) : (
                             <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -796,13 +795,15 @@ export default function App() {
                                     }}>
                                         <div>
                                             <div style={{ fontSize: '13px', fontWeight: '600' }}>👤 {friend.name}</div>
-                                            <div style={{ fontSize: '11px', color: '#777' }}>с {friend.joinedAt}</div>
+                                            <div style={{ fontSize: '11px', color: '#777' }}>с {friend.joinedAt} • заказов: {friend.ordersCount || 0}</div>
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
                                             <div style={{ color: '#4caf50', fontWeight: 'bold', fontSize: '13px' }}>
                                                 +{friend.earnedFromUser.toLocaleString()} ₫
                                             </div>
-                                            <div style={{ fontSize: '10px', color: '#777' }}>доход 5%</div>
+                                            <div style={{ fontSize: '10px', color: '#777' }}>
+                                                {(friend.ordersCount || 0) === 0 ? 'след. 5%' : 'доход 1%'}
+                                            </div>
                                         </div>
                                     </div>
                                 ))}

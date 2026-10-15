@@ -13,7 +13,6 @@ const MONGO_URI = process.env.MONGO_URI;
 let dbClient;
 let db = null;
 
-// Белый список сотрудников
 const STAFF_MEMBERS = {
     '848502221': { name: 'Влада', role: 'waiter', title: 'Официант' },
     '5676195545': { name: 'Никита', role: 'hookah', title: 'Кальянный мастер' },
@@ -28,7 +27,6 @@ const DEFAULT_PRODUCTS = [
     { id: 4, name: 'Чизкейк Нью-Йорк', category: 'Десерты', stock: 5, price: 85000 }
 ];
 
-// Резервная память на случай, если база еще подключается
 const fallbackMemory = {
     users: {},
     activeTables: {},
@@ -80,6 +78,7 @@ async function linkReferral(guestId, referrerId, guestName) {
                     userId: guestId,
                     name: guestName || 'Гость',
                     joinedAt: new Date().toLocaleDateString('ru-RU'),
+                    ordersCount: 0,
                     earnedFromUser: 0
                 }]
             });
@@ -89,11 +88,13 @@ async function linkReferral(guestId, referrerId, guestName) {
                 await usersCol.updateOne(
                     { id: referrerId },
                     {
-                        $inc: { bonusBalance: 100 },$push: {
+                        $inc: { bonusBalance: 100 },
+                        $push: {
                             referrals: {
                                 userId: guestId,
                                 name: guestName || (guest ? guest.firstName : 'Гость'),
                                 joinedAt: new Date().toLocaleDateString('ru-RU'),
+                                ordersCount: 0,
                                 earnedFromUser: 0
                             }
                         }
@@ -105,7 +106,6 @@ async function linkReferral(guestId, referrerId, guestName) {
         await usersCol.updateOne({ id: guestId }, { $set: { referredBy: referrerId } }, { upsert: true });
         return true;
     } else {
-        // Фоллбэк
         if (fallbackMemory.users[guestId]?.referredBy) return false;
         if (!fallbackMemory.users[referrerId]) {
             fallbackMemory.users[referrerId] = {
@@ -125,6 +125,7 @@ async function linkReferral(guestId, referrerId, guestName) {
             userId: guestId,
             name: guestName || 'Гость',
             joinedAt: new Date().toLocaleDateString('ru-RU'),
+            ordersCount: 0,
             earnedFromUser: 0
         });
         if (fallbackMemory.users[guestId]) {
@@ -190,7 +191,6 @@ app.post('/api/init-user', async (req, res) => {
                 products
             });
         } else {
-            // Если БД временно недоступна
             if (!fallbackMemory.users[strId]) {
                 fallbackMemory.users[strId] = {
                     id: strId,
@@ -276,7 +276,7 @@ app.post('/api/user/update-name', async (req, res) => {
     }
 });
 
-// 4. Инфо о клиенте по ID
+// 4. Инфо о клиенте
 app.get('/api/staff/client-info/:userId', async (req, res) => {
     try {
         const strId = String(req.params.userId).trim();
@@ -303,7 +303,7 @@ app.get('/api/staff/client-info/:userId', async (req, res) => {
     }
 });
 
-// 5. Посадить гостя за стол + сохранить постоянные заметки
+// 5. Посадить гостя за стол
 app.post('/api/staff/open-table', async (req, res) => {
     try {
         const { tableNum, userId, notes, staffName } = req.body;
@@ -372,7 +372,7 @@ app.post('/api/staff/update-client-notes', async (req, res) => {
     }
 });
 
-// 7. Закрытие стола с кешбэком 3% и 5% пригласившему
+// 7. ЗАКРЫТИЕ СТОЛА: Кешбэк гостю 3%, рефереру: 5% с 1-го заказа и 1% с последующих
 app.post('/api/staff/close-table', async (req, res) => {
     try {
         const { tableNum, orderTotal } = req.body;
@@ -385,22 +385,34 @@ app.post('/api/staff/close-table', async (req, res) => {
 
             const client = await db.collection('users').findOne({ id: table.userId });
             if (client) {
+                // Начисляем личный кешбэк 3% гостю
                 await db.collection('users').updateOne(
                     { id: client.id },
                     { $inc: { bonusBalance: cashback } }
                 );
 
+                // Расчет реферального бонуса пригласившему
                 if (client.referredBy) {
-                    const refBonus = Math.round(amount * 0.05);
-                    await db.collection('users').updateOne(
-                        { id: client.referredBy, "referrals.userId": client.id },
-                        {
-                            $inc: {
-                                bonusBalance: refBonus,
-                                "referrals.$.earnedFromUser": refBonus
+                    const referrer = await db.collection('users').findOne({ id: client.referredBy });
+                    if (referrer && Array.isArray(referrer.referrals)) {
+                        const refRecord = referrer.referrals.find(r => String(r.userId) === String(client.id));
+                        const currentOrders = refRecord?.ordersCount || 0;
+                        
+                        // ПЕРВЫЙ ЗАКАЗ: 5%, ПОСЛЕДУЮЩИЕ: 1%
+                        const rate = currentOrders === 0 ? 0.05 : 0.01;
+                        const refBonus = Math.round(amount * rate);
+
+                        await db.collection('users').updateOne(
+                            { id: client.referredBy, "referrals.userId": client.id },
+                            {
+                                $inc: {
+                                    bonusBalance: refBonus,
+                                    "referrals.$.earnedFromUser": refBonus,
+                                    "referrals.$.ordersCount": 1
+                                }
                             }
-                        }
-                    );
+                        );
+                    }
                 }
             }
 
@@ -410,6 +422,7 @@ app.post('/api/staff/close-table', async (req, res) => {
             tables.forEach(t => { activeTables[t.tableNum] = t; });
             return res.json({ success: true, cashbackAwarded: cashback, activeTables });
         } else {
+            // Фоллбэк в памяти
             const table = fallbackMemory.activeTables[tableNum];
             if (!table) return res.status(404).json({ error: 'Стол не найден' });
 
@@ -417,11 +430,19 @@ app.post('/api/staff/close-table', async (req, res) => {
             if (client) {
                 client.bonusBalance = (client.bonusBalance || 0) + cashback;
                 if (client.referredBy && fallbackMemory.users[client.referredBy]) {
-                    const refBonus = Math.round(amount * 0.05);
                     const referrer = fallbackMemory.users[client.referredBy];
+                    referrer.referrals = referrer.referrals || [];
+                    const refRecord = referrer.referrals.find(r => String(r.userId) === String(client.id));
+                    
+                    const currentOrders = refRecord?.ordersCount || 0;
+                    const rate = currentOrders === 0 ? 0.05 : 0.01;
+                    const refBonus = Math.round(amount * rate);
+
                     referrer.bonusBalance = (referrer.bonusBalance || 0) + refBonus;
-                    const r = (referrer.referrals || []).find(x => String(x.userId) === String(client.id));
-                    if (r) r.earnedFromUser = (r.earnedFromUser || 0) + refBonus;
+                    if (refRecord) {
+                        refRecord.earnedFromUser = (refRecord.earnedFromUser || 0) + refBonus;
+                        refRecord.ordersCount = currentOrders + 1;
+                    }
                 }
             }
 

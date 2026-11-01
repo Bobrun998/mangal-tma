@@ -198,6 +198,14 @@ export default function App() {
         syncUserData();
     }, []);
 
+    const openExternalUrl = (url) => {
+        if (window.Telegram?.WebApp?.openLink) {
+            window.Telegram.WebApp.openLink(url);
+        } else {
+            window.open(url, '_blank');
+        }
+    };
+
     const shareInviteLink = () => {
         const userId = user?.id || getRealTelegramUser().id;
         const botUsername = 'Mangal_nt_bot';
@@ -662,27 +670,47 @@ export default function App() {
             </div>
 
             <div className="grid">
-                <button className="btn" onClick={() => window.Telegram?.WebApp?.openLink ? window.Telegram.WebApp.openLink('https://emenu.kiotviet.vn/501208761/362144/1411239') : window.open('https://emenu.kiotviet.vn/501208761/362144/1411239', '_blank')}>
+                {/* 1. Кнопка меню с новой ссылкой */}
+                <button 
+                    className="btn" 
+                    onClick={() => openExternalUrl('https://mangallounge.web-store.online/menu/362144')}
+                >
                     <span className="btn-icon">📖</span> Наше меню
                 </button>
+
+                {/* 2. Переключатель брендов */}
                 <button className="btn" onClick={() => setBrand(brand === 'Mangal' ? 'MrPo' : 'Mangal')}>
                     <span className="btn-icon">🥩</span> {brand === 'Mangal' ? 'Наша продукция' : 'Вернуться в Lounge'}
                 </button>
+
+                {/* 3. Партнеры */}
                 <button className="btn btn-wide" onClick={() => alert('Список партнеров (Нячанг)')}>
                     <span className="btn-icon" style={{fontSize:'22px'}}>🤝</span> Партнеры
                 </button>
                 
                 {brand === 'Mangal' && (
                     <>
-                        <button className="btn btn-call btn-waiter" onClick={() => alert('Официант уведомлен!')}>
-                            🤵 Позвать<br/>Официанта
+                        {/* 4. Кнопка Инстаграм (вместо позвать официанта) */}
+                        <button 
+                            className="btn btn-call" 
+                            style={{ background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)', color: '#fff', border: 'none' }}
+                            onClick={() => openExternalUrl('https://www.instagram.com/mangal.lounge.nhatrang?exln=MXhsMm04dmtlcG9lcQ==')}
+                        >
+                            📸 Наш<br/>Instagram
                         </button>
-                        <button className="btn btn-call btn-hookah" onClick={() => alert('Кальянный мастер в пути!')}>
-                            💨 Позвать<br/>Кальянщика
+
+                        {/* 5. Кнопка Доставка (серая и неактивная) */}
+                        <button 
+                            className="btn btn-call" 
+                            disabled
+                            style={{ background: '#2c2c34', color: '#777', border: '1px solid #444', cursor: 'not-allowed', opacity: 0.7 }}
+                        >
+                            🛵 Доставка<br/><span style={{ fontSize: '11px', color: '#888' }}>(Скоро)</span>
                         </button>
                     </>
                 )}
 
+                {/* 6. Реферальная кнопка */}
                 <button className="btn btn-wide btn-invite" onClick={shareInviteLink}>
                     <span style={{ fontSize: '22px', marginRight: '10px' }}>🎁</span> Пригласить друга (+300 баллов, 5% с 1-го чека и 1% далее)
                 </button>
